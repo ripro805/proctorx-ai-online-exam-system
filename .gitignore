@@ -1,1 +1,41 @@
 frontend_backup/node_modules/
+
+# Python cache and build
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+
+# Virtual environments
+.proctorai_env/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# Django / project
+db.sqlite3
+*.sqlite3
+.pytest_cache/
+.mypy_cache/
+coverage/
+htmlcov/
+staticfiles/
+media/
+
+# IDEs and OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Certificates
+*.pem
