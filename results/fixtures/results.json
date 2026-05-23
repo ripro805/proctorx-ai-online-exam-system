@@ -1,0 +1,16 @@
+[
+  {
+    "model": "results.result",
+    "pk": 1,
+    "fields": {
+      "student": 3,
+      "exam": 1,
+      "total_questions": 2,
+      "correct_answers": 2,
+      "score": 10,
+      "percentage": 100,
+      "rank": 1,
+      "created_at": "2026-05-10T10:05:00Z"
+    }
+  }
+]

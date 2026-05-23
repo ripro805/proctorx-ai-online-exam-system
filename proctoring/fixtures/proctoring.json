@@ -1,0 +1,24 @@
+[
+  {
+    "model": "proctoring.proctorlog",
+    "pk": 1,
+    "fields": {
+      "student": 3,
+      "exam": 1,
+      "event_type": "no_face",
+      "timestamp": "2026-05-10T09:30:00Z",
+      "image": null
+    }
+  },
+  {
+    "model": "proctoring.proctorlog",
+    "pk": 2,
+    "fields": {
+      "student": 3,
+      "exam": 1,
+      "event_type": "tab_switch_detected",
+      "timestamp": "2026-05-10T09:45:00Z",
+      "image": null
+    }
+  }
+]
