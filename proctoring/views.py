@@ -168,7 +168,17 @@ class GenericEventAPIView(APIView):
 		if not can_student_access_exam(request.user, exam):
 			return Response({'detail': 'exam access denied'}, status=status.HTTP_403_FORBIDDEN)
 		log = services.log_proctor_event(request.user, exam, event_type, message=event_type)
-		_broadcast_exam_event(exam_id, event_type, 'Proctoring event', payload={'student': request.user.id})
+		payload = {
+			'id': log.id,
+			'exam_id': log.exam_id,
+			'student_id': request.user.id,
+			'student_name': request.user.full_name or request.user.username,
+			'event_type': log.event_type,
+			'message': log.message,
+			'timestamp': log.timestamp.isoformat(),
+		}
+		_broadcast_exam_event(exam_id, log.event_type, 'Proctoring event', payload=payload)
+		_broadcast_global_event(log.event_type, 'Proctoring event', payload=payload)
 		return Response(ProctorLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
 	def post(self, request, *args, **kwargs):

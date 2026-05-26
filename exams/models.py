@@ -2,12 +2,19 @@ from django.conf import settings
 from django.db import models
 
 
+class QuestionType(models.TextChoices):
+	MCQ = 'mcq', 'MCQ'
+	DESCRIPTION = 'description', 'Description'
+	IMAGE = 'image', 'Image'
+
+
 class Exam(models.Model):
 	title = models.CharField(max_length=200)
 	subject = models.CharField(max_length=120, blank=True)
 	description = models.TextField(blank=True)
 	created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_exams')
 	duration_minutes = models.PositiveIntegerField(default=60)
+	max_questions = models.PositiveIntegerField(default=0)
 	start_time = models.DateTimeField()
 	end_time = models.DateTimeField()
 	is_published = models.BooleanField(default=False)
@@ -34,7 +41,11 @@ class ExamEnrollment(models.Model):
 class Question(models.Model):
 	exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='questions')
 	text = models.TextField()
+	question_type = models.CharField(max_length=20, choices=QuestionType.choices, default=QuestionType.MCQ)
 	marks = models.PositiveIntegerField(default=1)
+	correct_answer_data = models.JSONField(default=dict, blank=True)
+	explanation = models.TextField(blank=True)
+	is_in_bank = models.BooleanField(default=False)
 
 	def __str__(self):
 		return f'{self.exam.title}: {self.text[:40]}'
@@ -53,8 +64,9 @@ class StudentAnswer(models.Model):
 	student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='answers')
 	exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='answers')
 	question = models.ForeignKey(Question, on_delete=models.CASCADE)
-	choice = models.ForeignKey(Choice, on_delete=models.CASCADE)
-	is_correct = models.BooleanField(default=False)
+	choice = models.ForeignKey(Choice, on_delete=models.CASCADE, null=True, blank=True)
+	answer_data = models.JSONField(default=dict, blank=True)
+	is_correct = models.BooleanField(default=False, null=True, blank=True)
 	answered_at = models.DateTimeField(auto_now_add=True)
 
 	class Meta:

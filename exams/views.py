@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.permissions import IsStudent, IsTeacher, can_student_access_exam
-from exams.models import Choice, Exam, Question, StudentAnswer
+from exams.models import Choice, Exam, Question, QuestionType, StudentAnswer
 from proctoring.models import StudentExamSession
 from exams.serializers import (
 	ChoiceSerializer,
@@ -44,6 +44,24 @@ class QuestionViewSet(viewsets.ModelViewSet):
 	queryset = Question.objects.all()
 	serializer_class = QuestionSerializer
 	permission_classes = [IsTeacher]
+
+	def get_queryset(self):
+		qs = Question.objects.select_related('exam').prefetch_related('choices')
+		subject = self.request.query_params.get('subject')
+		exam_id = self.request.query_params.get('exam_id')
+		question_type = self.request.query_params.get('question_type')
+		bank = self.request.query_params.get('bank')
+		if subject:
+			qs = qs.filter(exam__subject__iexact=subject)
+		if exam_id:
+			qs = qs.filter(exam_id=exam_id)
+		if question_type:
+			qs = qs.filter(question_type=question_type)
+		if bank in ('true', '1', 'yes'):
+			qs = qs.filter(is_in_bank=True)
+		elif bank in ('false', '0', 'no'):
+			qs = qs.filter(is_in_bank=False)
+		return qs.order_by('-id')
 
 
 class ChoiceViewSet(viewsets.ModelViewSet):
@@ -102,17 +120,38 @@ class ExamSubmitAPIView(APIView):
 
 			for item in answers:
 				question_id = item.get('question_id')
-				choice_id = item.get('choice_id')
 				question = Question.objects.filter(id=question_id, exam=exam).first()
-				choice = Choice.objects.filter(id=choice_id, question=question).first()
-				if not question or not choice:
+				if not question:
 					continue
-				is_correct = choice.is_correct
+
+				choice = None
+				is_correct = None
+				answer_data = {}
+				if question.question_type == QuestionType.MCQ:
+					choice_id = item.get('choice_id')
+					choice = Choice.objects.filter(id=choice_id, question=question).first()
+					if not choice:
+						continue
+					is_correct = choice.is_correct
+					answer_data = {'choice_id': choice.id, 'choice_text': choice.text}
+				elif question.question_type == QuestionType.DESCRIPTION:
+					text = item.get('answer_text') or item.get('text') or ''
+					answer_data = {'text': text}
+					correct_text = str((question.correct_answer_data or {}).get('text', '')).strip().lower()
+					if correct_text:
+						is_correct = str(text).strip().lower() == correct_text
+				elif question.question_type == QuestionType.IMAGE:
+					image = item.get('answer_image') or item.get('image') or ''
+					answer_data = {'image': image}
+					correct_image = str((question.correct_answer_data or {}).get('image', '')).strip()
+					if correct_image and image:
+						is_correct = image == correct_image
+
 				StudentAnswer.objects.update_or_create(
 					student=request.user,
 					exam=exam,
 					question=question,
-					defaults={'choice': choice, 'is_correct': is_correct},
+					defaults={'choice': choice, 'answer_data': answer_data, 'is_correct': is_correct},
 				)
 				if is_correct:
 					correct += question.marks

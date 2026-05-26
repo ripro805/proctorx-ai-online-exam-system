@@ -18,6 +18,20 @@ except Exception:  # pragma: no cover - optional deps
 logger = logging.getLogger(__name__)
 
 
+def _get_face_detection_module():
+    if not mp:
+        return None
+    solutions = getattr(mp, 'solutions', None)
+    if solutions is not None:
+        return solutions
+    try:  # pragma: no cover - depends on mediapipe packaging variant
+        import mediapipe.python.solutions as solutions_mod  # type: ignore
+        return solutions_mod
+    except Exception:
+        logger.exception('failed to resolve mediapipe solutions module')
+        return None
+
+
 def _decode_base64_image(frame_b64: str) -> Optional[bytes]:
     try:
         if frame_b64.startswith('data:'):
@@ -35,12 +49,16 @@ def detect_faces_from_bytes(image_bytes: bytes) -> Dict[str, object]:
         return {'faces': 0, 'boxes': [], 'annotated_bytes': image_bytes}
 
     try:
+        solutions = _get_face_detection_module()
+        if not solutions:
+            return {'faces': 0, 'boxes': [], 'annotated_bytes': image_bytes}
+
         data = np.frombuffer(image_bytes, dtype=np.uint8)
         img = cv2.imdecode(data, cv2.IMREAD_COLOR)
         if img is None:
             return {'faces': 0, 'boxes': [], 'annotated_bytes': image_bytes}
 
-        with mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as detector:
+        with solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as detector:
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             results = detector.process(rgb)
             detections = results.detections if results and results.detections else []
@@ -76,6 +94,46 @@ def detect_faces_from_bytes(image_bytes: bytes) -> Dict[str, object]:
         return {'faces': 0, 'boxes': [], 'annotated_bytes': image_bytes}
 
 
+def _heuristic_face_present(image_bytes: bytes) -> bool:
+    """Fallback signal for a visible face when MediaPipe misses it.
+
+    This is intentionally conservative: it only flips a no-face result to
+    face-present when the frame has a reasonable amount of skin-toned pixels
+    concentrated around the center of the frame.
+    """
+    if not cv2 or not np:
+        return False
+    try:
+        data = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            return False
+
+        h, w = img.shape[:2]
+        if h < 40 or w < 40:
+          return False
+
+        # Focus on the center 60% of the image where a face is usually located.
+        x1, y1 = int(w * 0.2), int(h * 0.15)
+        x2, y2 = int(w * 0.8), int(h * 0.85)
+        roi = img[y1:y2, x1:x2]
+        if roi.size == 0:
+            return False
+
+        ycrcb = cv2.cvtColor(roi, cv2.COLOR_BGR2YCrCb)
+        lower = np.array([0, 133, 77], dtype=np.uint8)
+        upper = np.array([255, 173, 127], dtype=np.uint8)
+        mask = cv2.inRange(ycrcb, lower, upper)
+
+        skin_ratio = float(cv2.countNonZero(mask)) / float(mask.size or 1)
+
+        # Enough skin in the center to assume a visible face.
+        return skin_ratio >= 0.02
+    except Exception:
+        logger.exception('error in fallback face heuristic')
+        return False
+
+
 def analyze_frame(frame_input) -> Dict[str, Optional[object]]:
     """High-level analyzer.
 
@@ -97,6 +155,17 @@ def analyze_frame(frame_input) -> Dict[str, Optional[object]]:
 
     res = detect_faces_from_bytes(image_bytes)
     faces = int(res.get('faces', 0))
+
+    # If MediaPipe fails to find a face, try a conservative fallback heuristic.
+    if faces == 0 and _heuristic_face_present(image_bytes):
+        return {
+            'face_detected': True,
+            'multiple_faces': False,
+            'warning': None,
+            'image_bytes': res.get('annotated_bytes') or image_bytes,
+            'boxes': res.get('boxes', []),
+            'heuristic': True,
+        }
 
     if faces == 0:
         return {'face_detected': False, 'multiple_faces': False, 'warning': 'no_face', 'image_bytes': res.get('annotated_bytes') or image_bytes, 'boxes': res.get('boxes', [])}

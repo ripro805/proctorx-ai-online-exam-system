@@ -36,6 +36,7 @@ export function WebcamMonitor({
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const [permission, setPermission] = React.useState<"pending" | "granted" | "denied">("pending");
+  const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [face, setFace] = React.useState<FaceState>("idle");
   const [lastSent, setLastSent] = React.useState<number | null>(null);
   const lastStateRef = React.useRef<FaceState>("idle");
@@ -44,8 +45,14 @@ export function WebcamMonitor({
 
   const requestAccess = React.useCallback(async () => {
     try {
+      setCameraError(null);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, facingMode: "user" },
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          facingMode: { ideal: "user" },
+        },
         audio: false,
       });
       streamRef.current = stream;
@@ -54,7 +61,18 @@ export function WebcamMonitor({
         await videoRef.current.play().catch(() => {});
       }
       setPermission("granted");
-    } catch {
+    } catch (err) {
+      const error = err as DOMException | Error;
+      const name = (error as DOMException).name ?? "";
+      const fallbackMessage =
+        name === "NotAllowedError"
+          ? "Camera permission was blocked. Please allow webcam access in your browser and try again."
+          : name === "NotFoundError"
+            ? "No webcam was found on this device. Please connect a camera and try again."
+            : name === "NotReadableError"
+              ? "Your webcam is busy or unavailable. Close other apps using the camera and try again."
+              : "Unable to start the webcam. Please check browser permissions and try again.";
+      setCameraError(fallbackMessage);
       setPermission("denied");
     }
   }, []);
@@ -68,7 +86,7 @@ export function WebcamMonitor({
 
   React.useEffect(() => {
     if (permission !== "granted") return;
-    const tick = () => {
+    const tick = async () => {
       const v = videoRef.current;
       const c = canvasRef.current;
       if (!v || !c || v.videoWidth === 0) return;
@@ -82,9 +100,14 @@ export function WebcamMonitor({
 
       // Publish a slightly larger frame for the teacher feed
       const dataUrl = c.toDataURL("image/jpeg", 0.55);
-      publishFrame({ studentId, studentName, examId, dataUrl, ts: now });
+      const analysis = await publishFrame({ studentId, studentName, examId, dataUrl, ts: now });
 
-      const raw = analyzeFrame(ctx, c.width, c.height);
+      let raw: FaceState = analyzeFrame(ctx, c.width, c.height);
+      if (analysis) {
+        if (analysis.warning === "no_face") raw = "no_face";
+        else if (analysis.warning === "multiple_faces") raw = "multi_face";
+        else if (analysis.face_detected) raw = "ok";
+      }
 
       // Temporal smoothing: only switch state after 2 consecutive same readings
       const hist = historyRef.current;
@@ -115,7 +138,7 @@ export function WebcamMonitor({
       }
     };
     tick();
-    const id = setInterval(tick, intervalMs);
+    const id = setInterval(() => { void tick(); }, intervalMs);
     return () => clearInterval(id);
   }, [permission, intervalMs, studentId, studentName, examId, logEvent, publishFrame]);
 
@@ -143,6 +166,7 @@ export function WebcamMonitor({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
             <Camera className="h-6 w-6 text-destructive" />
             <div className="text-xs">Webcam access required to take this exam.</div>
+            {cameraError && <div className="max-w-[16rem] text-[11px] text-muted-foreground">{cameraError}</div>}
             <Button size="sm" variant="outline" onClick={requestAccess}>Try again</Button>
           </div>
         )}
@@ -161,6 +185,11 @@ export function WebcamMonitor({
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>AI face check every {Math.round(intervalMs / 1000)}s</span>
           {lastSent && <span>frame: {new Date(lastSent).toLocaleTimeString()}</span>}
+        </div>
+      )}
+      {permission !== "granted" && (
+        <div className="text-[10px] text-muted-foreground">
+          If your browser asked for camera permission, choose <span className="font-medium text-foreground">Allow</span>. If it didn’t, click <span className="font-medium text-foreground">Try again</span> after checking the site camera permission in the address bar.
         </div>
       )}
     </div>

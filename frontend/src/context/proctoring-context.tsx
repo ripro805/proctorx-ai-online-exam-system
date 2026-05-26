@@ -39,7 +39,7 @@ interface ProctoringContextValue {
   logEvent: (e: Omit<ProctoringEvent, "id" | "timestamp">) => void;
   clear: () => void;
   liveFrames: Record<string, LiveFrame>;
-  publishFrame: (f: LiveFrame) => void;
+  publishFrame: (f: LiveFrame) => Promise<any | null>;
 }
 
 const Ctx = React.createContext<ProctoringContextValue | null>(null);
@@ -81,11 +81,16 @@ export function ProctoringProvider({ children }: { children: React.ReactNode }) 
       }
     };
     fetchLogs();
+    const id = user.role === "student" ? null : setInterval(fetchLogs, 15000);
+    return () => {
+      if (id) clearInterval(id);
+    };
   }, [user]);
 
   React.useEffect(() => {
     if (!user) return;
     const ws = new WebSocket(wsUrl("/ws/proctoring/"));
+    const wsRef = { current: ws } as { current: WebSocket | null };
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
@@ -113,7 +118,12 @@ export function ProctoringProvider({ children }: { children: React.ReactNode }) 
         // ignore
       }
     };
-    return () => ws.close();
+    // store websocket on window for debugging and allow cleanup
+    (window as any).__proctoring_ws = wsRef;
+    return () => {
+      try { ws.close(); } catch {};
+      (window as any).__proctoring_ws = null;
+    };
   }, [user]);
 
   const logEvent = React.useCallback<ProctoringContextValue["logEvent"]>((e) => {
@@ -128,11 +138,27 @@ export function ProctoringProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
-  const publishFrame = React.useCallback((f: LiveFrame) => {
+  const publishFrame = React.useCallback(async (f: LiveFrame) => {
     setLiveFrames((prev) => ({ ...prev, [f.studentId]: f }));
     if (f.examId) {
-      sendProctorFrame(f.examId, f.dataUrl).catch(() => {});
+      try {
+        const resp = await sendProctorFrame(f.examId, f.dataUrl);
+        // Also send the frame over websocket as a fast path so teachers receive it immediately.
+        try {
+          const wsAny = (window as any).__proctoring_ws;
+          const ws = wsAny && wsAny.current ? wsAny.current as WebSocket : null;
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event: 'frame', payload: { exam_id: f.examId, student_id: f.studentId, student_name: f.studentName, frame: f.dataUrl, timestamp: new Date().toISOString() } }));
+          }
+        } catch (e) {
+          // ignore websocket send errors
+        }
+        return resp;
+      } catch {
+        return null;
+      }
     }
+    return null;
   }, []);
 
   const clear = React.useCallback(() => setEvents([]), []);

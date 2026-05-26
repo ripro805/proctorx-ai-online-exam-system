@@ -7,6 +7,14 @@ export interface AuthUser {
   role: Role;
 }
 
+export type ExamAnswerPayload = {
+  question_id: number;
+  choice_id?: number;
+  answer_text?: string;
+  answer_image?: string;
+  answer_data?: Record<string, unknown>;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000";
 
@@ -244,19 +252,38 @@ export async function deleteExam(examId: string) {
   return apiFetch(`/exams/${examId}/`, { method: "DELETE" });
 }
 
-export async function getQuestions() {
-  return apiFetch("/questions/");
+export async function getQuestions(params?: { subject?: string; examId?: string; questionType?: string; bank?: boolean }) {
+  const qs = new URLSearchParams();
+  if (params?.subject) qs.set("subject", params.subject);
+  if (params?.examId) qs.set("exam_id", params.examId);
+  if (params?.questionType) qs.set("question_type", params.questionType);
+  if (typeof params?.bank === "boolean") qs.set("bank", params.bank ? "true" : "false");
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch(`/questions/${suffix}`);
+}
+
+export async function createQuestion(payload: Record<string, unknown>) {
+  return apiFetch("/questions/", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateQuestion(questionId: string, payload: Record<string, unknown>) {
+  return apiFetch(`/questions/${questionId}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function getTeacherExamsBySubject(subject?: string) {
+  const qs = subject ? `?subject=${encodeURIComponent(subject)}` : "";
+  return apiFetch(`/exams/${qs}`);
 }
 
 export async function startExam(examId: string) {
   return apiFetch("/exam/start/", { method: "POST", body: JSON.stringify({ exam_id: examId }) });
 }
 
-export async function submitExam(examId: string, answers: Array<{ question_id: number; choice_id: number }>) {
+export async function submitExam(examId: string, answers: ExamAnswerPayload[]) {
   return apiFetch("/exam/submit/", { method: "POST", body: JSON.stringify({ exam_id: examId, answers }) });
 }
 
-export async function saveExamProgress(examId: string, answers: Array<{ question_id: number; choice_id: number }>) {
+export async function saveExamProgress(examId: string, answers: ExamAnswerPayload[]) {
   return apiFetch("/exam/save/", { method: "POST", body: JSON.stringify({ exam_id: examId, answers }) });
 }
 

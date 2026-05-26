@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,8 @@ import { Progress } from "@/components/ui/progress";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { getExam, getExamProgress, saveExamProgress, startExam, submitExam } from "@/lib/api";
 import { useAuth } from "@/context/auth-context";
 import { useProctoring, severityFor, messageFor } from "@/context/proctoring-context";
@@ -27,7 +29,7 @@ function ExamPage() {
   const [exam, setExam] = useState<any | null>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [answers, setAnswers] = useState<Record<number, any>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [warnings, setWarnings] = useState(0);
   const [showWarning, setShowWarning] = useState<string | null>(null);
@@ -50,11 +52,14 @@ function ExamPage() {
         setQuestions(data.questions ?? []);
         const progress = await getExamProgress(examId).catch(() => null);
         if (progress?.answers) {
-          const mapped: Record<number, number> = {};
+          const mapped: Record<number, any> = {};
           for (const item of progress.answers) {
-            if (item?.question_id && item?.choice_id) {
-              mapped[item.question_id] = item.choice_id;
-            }
+            if (!item?.question_id) continue;
+            if (item?.choice_id) mapped[item.question_id] = { choice_id: item.choice_id };
+            else if (item?.answer_text) mapped[item.question_id] = { answer_text: item.answer_text };
+            else if (item?.answer_image) mapped[item.question_id] = { answer_image: item.answer_image };
+            else if (item?.answer_data) mapped[item.question_id] = item.answer_data;
+            else if (item?.choice) mapped[item.question_id] = { choice_id: item.choice };
           }
           setAnswers(mapped);
         }
@@ -119,11 +124,12 @@ function ExamPage() {
   const goFullscreen = () => { document.documentElement.requestFullscreen?.().catch(() => {}); };
 
   const myRecentEvents = events.filter((e) => e.studentId === studentId).slice(0, 4);
+  const currentAnswer = q ? answers[q.id] : undefined;
 
   useEffect(() => {
     if (!exam || !user) return;
     const id = setTimeout(() => {
-      const payload = Object.entries(answers).map(([qid, cid]) => ({ question_id: Number(qid), choice_id: cid }));
+      const payload = Object.entries(answers).map(([qid, value]) => normalizeAnswerPayload(Number(qid), value));
       if (payload.length) saveExamProgress(examId, payload).catch(() => {});
     }, 700);
     return () => clearTimeout(id);
@@ -179,21 +185,59 @@ function ExamPage() {
           <div className="max-w-2xl mx-auto">
             <div className="text-xs text-muted-foreground mb-2">Question {idx + 1} of {questions.length}</div>
             <h2 className="text-xl md:text-2xl font-semibold mb-6">{q?.text}</h2>
-            <div className="space-y-3">
-              {q?.choices?.map((opt: any, i: number) => (
-                <button key={opt.id} onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
-                  className={cn("w-full text-left px-4 py-3 rounded-lg border transition-all",
-                    answers[q.id] === opt.id ? "border-primary bg-primary/10 shadow-glow" : "border-border hover:border-primary/40 hover:bg-muted/40")}>
-                  <div className="flex items-start gap-3">
-                    <div className={cn("h-6 w-6 rounded-full border flex items-center justify-center text-xs font-medium shrink-0",
-                      answers[q.id] === opt.id ? "border-primary bg-primary text-primary-foreground" : "border-border")}>
-                      {String.fromCharCode(65 + i)}
+
+            {q?.question_type === "mcq" && (
+              <div className="space-y-3">
+                {q?.choices?.map((opt: any, i: number) => (
+                  <button key={opt.id} onClick={() => setAnswers((a) => ({ ...a, [q.id]: { choice_id: opt.id } }))}
+                    className={cn("w-full text-left px-4 py-3 rounded-lg border transition-all",
+                      currentAnswer?.choice_id === opt.id ? "border-primary bg-primary/10 shadow-glow" : "border-border hover:border-primary/40 hover:bg-muted/40")}>
+                    <div className="flex items-start gap-3">
+                      <div className={cn("h-6 w-6 rounded-full border flex items-center justify-center text-xs font-medium shrink-0",
+                        currentAnswer?.choice_id === opt.id ? "border-primary bg-primary text-primary-foreground" : "border-border")}>
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                      <span>{opt.text}</span>
                     </div>
-                    <span>{opt.text}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {q?.question_type === "description" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Write your answer</label>
+                <Textarea
+                  rows={7}
+                  value={currentAnswer?.answer_text ?? ""}
+                  onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: { answer_text: e.target.value } }))}
+                  placeholder="Type your descriptive answer here…"
+                />
+              </div>
+            )}
+
+            {q?.question_type === "image" && (
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Upload your answer image</label>
+                <div className="rounded-lg border border-dashed border-border/70 p-4">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const dataUrl = await fileToDataUrl(file);
+                      setAnswers((a) => ({ ...a, [q.id]: { answer_image: dataUrl } }));
+                    }}
+                  />
+                  <div className="mt-2 text-xs text-muted-foreground">Accepted formats: PNG, JPG, JPEG</div>
+                </div>
+                {currentAnswer?.answer_image && (
+                  <img src={currentAnswer.answer_image} alt="Uploaded answer preview" className="max-h-56 rounded-md border object-contain" />
+                )}
+              </div>
+            )}
+
             <div className="mt-8 flex justify-between">
               <Button variant="outline" disabled={idx === 0} onClick={() => setIdx((i) => i - 1)}>
                 <ChevronLeft className="h-4 w-4 mr-1" /> Previous
@@ -215,7 +259,7 @@ function ExamPage() {
               <WebcamMonitor studentId={studentId} studentName={studentName} examId={examId} />
             </CardContent>
           </Card>
-          <Card className={cn("border-border/60", warnings > 0 && "border-warning/40")}>
+          <Card className={cn("border-border/60", warnings > 0 && "border-warning/40") }>
             <CardContent className="p-3">
               <div className="flex items-center gap-2 text-xs font-semibold mb-2">
                 <AlertTriangle className={cn("h-3 w-3", warnings > 0 ? "text-warning" : "text-muted-foreground")} /> Warnings
@@ -262,21 +306,39 @@ function ExamPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitOpen(false)}>Continue exam</Button>
             <Button className="gradient-primary text-primary-foreground" onClick={() => {
-                const payload = Object.entries(answers).map(([qid, cid]) => ({ question_id: Number(qid), choice_id: cid }));
-                submitExam(examId, payload).then(() => {
-                  logEvent({
-                    studentId, studentName, examId,
-                    type: "EXAM_SUBMITTED",
-                    severity: severityFor("EXAM_SUBMITTED"),
-                    message: messageFor("EXAM_SUBMITTED"),
-                  });
-                  toast.success("Exam submitted successfully!");
-                  navigate({ to: "/student/results" });
-                }).catch(() => toast.error("Failed to submit exam"));
+              const payload = Object.entries(answers).map(([qid, value]) => normalizeAnswerPayload(Number(qid), value));
+              submitExam(examId, payload).then(() => {
+                logEvent({
+                  studentId, studentName, examId,
+                  type: "EXAM_SUBMITTED",
+                  severity: severityFor("EXAM_SUBMITTED"),
+                  message: messageFor("EXAM_SUBMITTED"),
+                });
+                toast.success("Exam submitted successfully!");
+                navigate({ to: "/student/results" });
+              }).catch(() => toast.error("Failed to submit exam"));
             }}>Submit now</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+function normalizeAnswerPayload(question_id: number, value: any) {
+  if (!value || typeof value !== "object") return { question_id };
+  if (value.choice_id !== undefined) return { question_id, choice_id: value.choice_id };
+  if (value.answer_text !== undefined) return { question_id, answer_text: value.answer_text };
+  if (value.answer_image !== undefined) return { question_id, answer_image: value.answer_image };
+  if (value.answer_data) return { question_id, ...value.answer_data };
+  return { question_id, ...value };
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

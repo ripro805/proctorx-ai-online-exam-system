@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useProctoring } from "@/context/proctoring-context";
 import { LiveAlertsFeed } from "@/components/proctoring/live-alerts-feed";
-import { Camera, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Camera, AlertTriangle, ShieldCheck, Video, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/auth-context";
@@ -15,6 +15,7 @@ function MonitoringPage() {
   const { events, liveFrames } = useProctoring();
   const { user } = useAuth();
   const [activeStudents, setActiveStudents] = useState<any[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -39,12 +40,26 @@ function MonitoringPage() {
     return map;
   }, [events]);
 
+  const latestActivityByStudent = useMemo(() => {
+    const map = new Map<string, { text: string; ts: number; type: string }>();
+    for (const e of events) {
+      const current = map.get(e.studentId);
+      if (!current || e.timestamp > current.ts) {
+        map.set(e.studentId, { text: e.message, ts: e.timestamp, type: e.type });
+      }
+    }
+    return map;
+  }, [events]);
+
   // Merge mock students with any live student whose webcam frame we have.
   const studentTiles = useMemo(() => {
     const base = activeStudents.map((s) => ({
       id: String(s.student_id),
       name: s.student_name,
       warningsSeed: s.warning_count ?? 0,
+      examId: String(s.exam_id),
+      lastEventType: s.last_event_type ?? null,
+      lastEventTime: s.last_event_time ? Date.parse(s.last_event_time) || Date.now() : null,
     }));
     const knownIds = new Set(base.map((b) => b.id));
     Object.values(liveFrames).forEach((f) => {
@@ -56,7 +71,16 @@ function MonitoringPage() {
       }
     });
     return base;
-  }, [liveFrames, user]);
+  }, [activeStudents, liveFrames, user]);
+
+  const focusedStudent = useMemo(() => {
+    if (!studentTiles.length) return null;
+    const match = studentTiles.find((s) => s.id === selectedStudentId);
+    return match ?? studentTiles[0];
+  }, [selectedStudentId, studentTiles]);
+
+  const selectedFrame = focusedStudent ? liveFrames[focusedStudent.id] : null;
+  const selectedActivity = focusedStudent ? latestActivityByStudent.get(focusedStudent.id) : null;
 
   return (
     <div className="space-y-6">
@@ -66,6 +90,72 @@ function MonitoringPage() {
           Real-time AI proctoring across all active exams. Live webcam feeds appear automatically when a student starts an exam.
         </p>
       </div>
+
+      {focusedStudent && (
+        <Card className="border-border/60 shadow-lg overflow-hidden">
+          <CardContent className="p-0 grid lg:grid-cols-[2fr_1fr]">
+            <div className="relative aspect-video bg-linear-to-br from-primary/20 to-accent/20 overflow-hidden">
+              {selectedFrame && Date.now() - selectedFrame.ts < 15_000 ? (
+                <img
+                  src={selectedFrame.dataUrl}
+                  alt={`${focusedStudent.name} live webcam`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                  <Video className="h-12 w-12" />
+                </div>
+              )}
+              <div className="absolute top-3 left-3 flex items-center gap-2">
+                <Badge className="bg-background/80 text-foreground border-0 gap-1">
+                  <Eye className="h-3 w-3" /> {focusedStudent.name}
+                </Badge>
+                <Badge className={cn("border-0", selectedFrame ? "bg-success/20 text-success" : "bg-muted text-muted-foreground")}>
+                  {selectedFrame ? "LIVE VIDEO" : "OFFLINE"}
+                </Badge>
+              </div>
+              <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+                <div className="bg-background/80 backdrop-blur px-3 py-2 rounded-md max-w-[70%]">
+                  <div className="text-sm font-semibold truncate">{focusedStudent.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {selectedActivity?.text ?? (selectedFrame ? "Camera feed active" : "Waiting for webcam frame")}
+                  </div>
+                </div>
+                <div className="bg-background/80 backdrop-blur px-3 py-2 rounded-md text-right">
+                  <div className="text-xs text-muted-foreground">Current status</div>
+                  <div className="text-sm font-semibold">
+                    {selectedFrame ? "Monitoring live" : "No live frame"}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 space-y-3 border-t lg:border-t-0 lg:border-l border-border/60">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Student details</div>
+                <div className="text-lg font-semibold">{focusedStudent.name}</div>
+                <div className="text-xs text-muted-foreground">Exam #{focusedStudent.examId}</div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-success/20 text-success border-0">{selectedFrame ? "Camera active" : "Camera pending"}</Badge>
+                <Badge className="bg-warning/20 text-warning border-0">{(studentRisk.get(focusedStudent.id)?.warnings ?? focusedStudent.warningsSeed) || 0} warnings</Badge>
+                {focusedStudent.lastEventType && (
+                  <Badge className="bg-muted text-muted-foreground border-0">Last: {humanizeEvent(focusedStudent.lastEventType)}</Badge>
+                )}
+              </div>
+              <div className="rounded-lg border border-border/60 bg-card/40 p-3 text-sm space-y-1">
+                <div className="font-medium">What the student is doing</div>
+                <div className="text-muted-foreground">
+                  {selectedActivity?.text
+                    ?? (selectedFrame ? "Live webcam feed active and being monitored." : "Awaiting live webcam connection from the student.")}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {selectedActivity ? `Updated ${Math.max(0, Math.floor((Date.now() - selectedActivity.ts) / 1000))}s ago` : "No recent action yet"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {studentTiles.map((s) => {
@@ -80,8 +170,13 @@ function MonitoringPage() {
           const label = status === "active" ? "Normal" : status === "warning" ? "Warning" : "High Risk";
           const frame = liveFrames[s.id];
           const isLive = frame && Date.now() - frame.ts < 15_000;
+          const activity = latestActivityByStudent.get(s.id);
           return (
-            <Card key={s.id} className={cn("border-2 transition-colors", color)}>
+            <Card
+              key={s.id}
+              className={cn("border-2 transition-colors cursor-pointer", color, selectedStudentId === s.id && "ring-2 ring-primary")}
+              onClick={() => setSelectedStudentId(s.id)}
+            >
               <CardContent className="p-3">
                 <div className="aspect-video rounded-md overflow-hidden bg-linear-to-br from-primary/20 to-accent/20 flex items-center justify-center relative">
                   {isLive ? (
@@ -106,6 +201,13 @@ function MonitoringPage() {
                   <Badge className={cn("border-0 text-[10px]", badgeCls)}>{label}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+                  <Video className="h-3 w-3" />
+                  {isLive ? "Live video active" : "Waiting for webcam"}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground line-clamp-2 min-h-10">
+                  {activity?.text ?? (s.lastEventType ? humanizeEvent(String(s.lastEventType)) : "No recent activity")}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
                   {warnings > 0 ? <AlertTriangle className="h-3 w-3 text-warning" /> : <ShieldCheck className="h-3 w-3 text-success" />}
                   {warnings} warning{warnings !== 1 && "s"}
                 </div>
@@ -118,4 +220,27 @@ function MonitoringPage() {
       <LiveAlertsFeed />
     </div>
   );
+}
+
+function humanizeEvent(eventType: string | null | undefined) {
+  switch (String(eventType || "").toLowerCase()) {
+    case "no_face":
+      return "No face detected";
+    case "multiple_faces":
+      return "Multiple faces detected";
+    case "face_not_centered":
+      return "Face detected";
+    case "tab_switch":
+      return "Tab switch detected";
+    case "fullscreen_exit":
+      return "Exited fullscreen";
+    case "copy_attempt":
+      return "Copy attempt blocked";
+    case "paste_attempt":
+      return "Paste attempt blocked";
+    case "right_click":
+      return "Right click blocked";
+    default:
+      return eventType ? String(eventType).replace(/_/g, " ") : "No recent activity";
+  }
 }

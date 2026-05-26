@@ -119,11 +119,12 @@ class Command(BaseCommand):
                 exam=ongoing_exam,
                 defaults={'status': 'ongoing', 'started_at': now - timedelta(minutes=20)},
             )
-            ProctorLog.objects.get_or_create(
-                student=student,
-                exam=ongoing_exam,
-                event_type='tab_switch',
-                defaults={'message': 'Tab switch detected'},
-            )
+            if not ProctorLog.objects.filter(student=student, exam=ongoing_exam, event_type='tab_switch').exists():
+                ProctorLog.objects.create(
+                    student=student,
+                    exam=ongoing_exam,
+                    event_type='tab_switch',
+                    message='Tab switch detected',
+                )
 
         self.stdout.write(self.style.SUCCESS('Seeded demo data (admin/teacher/student accounts, exams, questions, results).'))
