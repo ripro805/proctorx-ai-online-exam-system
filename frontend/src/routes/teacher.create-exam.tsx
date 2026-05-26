@@ -137,13 +137,18 @@ function CreateExamPage() {
   };
 
   const addNewQuestionFromBank = async () => {
-    if (!canAddMore) {
-      toast.error("Question limit reached");
+    if (canAddMore) {
+      const nextIndex = questions.length;
+      addQuestion();
+      await openBankPicker(nextIndex);
       return;
     }
-    const nextIndex = questions.length;
-    addQuestion();
-    await openBankPicker(nextIndex);
+
+    const fallbackIndex = Math.max(0, questions.length - 1);
+    toast.message("Question limit reached", {
+      description: "Reusing the last question slot from the bank instead.",
+    });
+    await openBankPicker(fallbackIndex);
   };
 
   const filteredQuestions = filteredBankQuestions(bankQuestions, bankSearch);
@@ -263,7 +268,7 @@ function CreateExamPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle>Questions</CardTitle>
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => void addNewQuestionFromBank()} disabled={!canAddMore}>
+              <Button type="button" variant="outline" onClick={() => void addNewQuestionFromBank()}>
                 <BookOpen className="h-4 w-4 mr-1" /> Reuse from bank
               </Button>
               <Button type="button" onClick={addQuestion} disabled={!canAddMore}>
