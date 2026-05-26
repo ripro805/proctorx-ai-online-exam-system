@@ -1,11 +1,14 @@
 import {
   LayoutDashboard, BookOpen, Clock, CheckCircle2, TrendingUp,
-  Bell, User, Settings, HelpCircle,
+  Bell, User, Settings, HelpCircle, Sparkles, Brain, WandSparkles,
 } from "lucide-react";
 import type { NavItem } from "@/components/dashboard/dashboard-sidebar";
 
 export const studentNav: NavItem[] = [
   { title: "Dashboard", url: "/student/dashboard", icon: LayoutDashboard },
+  { title: "AI Tutor", url: "/student/ai-tutor", icon: Sparkles },
+  { title: "Study Planner", url: "/student/study-planner", icon: Brain },
+  { title: "AI Quiz", url: "/student/ai-quiz", icon: WandSparkles },
   { title: "Exams", url: "/student/exams", icon: BookOpen },
   { title: "Ongoing", url: "/student/ongoing", icon: Clock },
   { title: "Results", url: "/student/results", icon: TrendingUp },

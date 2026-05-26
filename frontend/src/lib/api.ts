@@ -26,6 +26,10 @@ function getAccessToken() {
   return localStorage.getItem(ACCESS_KEY);
 }
 
+export function getStoredAccessToken() {
+  return getAccessToken();
+}
+
 function getRefreshToken() {
   return localStorage.getItem(REFRESH_KEY);
 }
@@ -291,6 +295,48 @@ export async function getExamProgress(examId: string) {
   return apiFetch(`/exam/progress/?exam_id=${encodeURIComponent(examId)}`);
 }
 
+export async function getAiConversations() {
+  return apiFetch("/ai/chat/");
+}
+
+export async function getAiConversation(conversationId: string) {
+  return apiFetch(`/ai/chat/?conversation_id=${encodeURIComponent(conversationId)}`);
+}
+
+export async function sendAiChatMessage(payload: { message: string; conversationId?: string; subject?: string; action?: "chat" | "voice" }) {
+  return apiFetch("/ai/chat/", {
+    method: "POST",
+    body: JSON.stringify({
+      message: payload.message,
+      conversation_id: payload.conversationId,
+      subject: payload.subject,
+      action: payload.action ?? "chat",
+    }),
+  });
+}
+
+export async function getAiStudyPlans() {
+  return apiFetch("/ai/study-plan/");
+}
+
+export async function generateAiStudyPlan(payload: { subject: string; examId?: string }) {
+  return apiFetch("/ai/study-plan/", {
+    method: "POST",
+    body: JSON.stringify({ subject: payload.subject, exam_id: payload.examId }),
+  });
+}
+
+export async function generateAiQuiz(payload: { topic: string; difficulty: string; count: number }) {
+  return apiFetch("/ai/generate-quiz/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAiPerformanceAnalysis() {
+  return apiFetch("/ai/performance-analysis/");
+}
+
 export async function logProctorEvent(payload: { examId: string; eventType: string; message?: string }) {
   return apiFetch("/proctoring/log/", {
     method: "POST",
@@ -313,7 +359,8 @@ export async function getMyProctorLogs() {
   return apiFetch("/proctoring/my-logs/");
 }
 
-export function wsUrl(path: string) {
+export function wsUrl(path: string, token?: string) {
   const base = WS_BASE_URL.replace(/\/$/, "");
-  return `${base}${path}`;
+  const suffix = token ? `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : path;
+  return `${base}${suffix}`;
 }

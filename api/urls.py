@@ -28,6 +28,7 @@ from api.views import (
 urlpatterns = [
     path('', include('users.urls')),
     path('', include('exams.urls')),
+    path('', include('ai_tutor.urls')),
     path('', include('results.urls')),
     path('', include('proctoring.urls')),
     path('dashboard/student/', StudentDashboardAPIView.as_view(), name='dashboard-student'),

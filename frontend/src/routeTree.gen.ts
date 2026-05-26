@@ -27,6 +27,7 @@ import { Route as TeacherMonitoringRouteImport } from './routes/teacher.monitori
 import { Route as TeacherManageExamsRouteImport } from './routes/teacher.manage-exams'
 import { Route as TeacherDashboardRouteImport } from './routes/teacher.dashboard'
 import { Route as TeacherCreateExamRouteImport } from './routes/teacher.create-exam'
+import { Route as StudentStudyPlannerRouteImport } from './routes/student.study-planner'
 import { Route as StudentSettingsRouteImport } from './routes/student.settings'
 import { Route as StudentResultsRouteImport } from './routes/student.results'
 import { Route as StudentProfileRouteImport } from './routes/student.profile'
@@ -35,6 +36,8 @@ import { Route as StudentNotificationsRouteImport } from './routes/student.notif
 import { Route as StudentHelpRouteImport } from './routes/student.help'
 import { Route as StudentExamsRouteImport } from './routes/student.exams'
 import { Route as StudentDashboardRouteImport } from './routes/student.dashboard'
+import { Route as StudentAiTutorRouteImport } from './routes/student.ai-tutor'
+import { Route as StudentAiQuizRouteImport } from './routes/student.ai-quiz'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminTeachersRouteImport } from './routes/admin.teachers'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
@@ -139,6 +142,11 @@ const TeacherCreateExamRoute = TeacherCreateExamRouteImport.update({
   path: '/create-exam',
   getParentRoute: () => TeacherRoute,
 } as any)
+const StudentStudyPlannerRoute = StudentStudyPlannerRouteImport.update({
+  id: '/study-planner',
+  path: '/study-planner',
+  getParentRoute: () => StudentRoute,
+} as any)
 const StudentSettingsRoute = StudentSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -177,6 +185,16 @@ const StudentExamsRoute = StudentExamsRouteImport.update({
 const StudentDashboardRoute = StudentDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => StudentRoute,
+} as any)
+const StudentAiTutorRoute = StudentAiTutorRouteImport.update({
+  id: '/ai-tutor',
+  path: '/ai-tutor',
+  getParentRoute: () => StudentRoute,
+} as any)
+const StudentAiQuizRoute = StudentAiQuizRouteImport.update({
+  id: '/ai-quiz',
+  path: '/ai-quiz',
   getParentRoute: () => StudentRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -270,6 +288,8 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/teachers': typeof AdminTeachersRoute
   '/admin/users': typeof AdminUsersRoute
+  '/student/ai-quiz': typeof StudentAiQuizRoute
+  '/student/ai-tutor': typeof StudentAiTutorRoute
   '/student/dashboard': typeof StudentDashboardRoute
   '/student/exams': typeof StudentExamsRoute
   '/student/help': typeof StudentHelpRoute
@@ -278,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/student/profile': typeof StudentProfileRoute
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
+  '/student/study-planner': typeof StudentStudyPlannerRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -307,6 +328,8 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/teachers': typeof AdminTeachersRoute
   '/admin/users': typeof AdminUsersRoute
+  '/student/ai-quiz': typeof StudentAiQuizRoute
+  '/student/ai-tutor': typeof StudentAiTutorRoute
   '/student/dashboard': typeof StudentDashboardRoute
   '/student/exams': typeof StudentExamsRoute
   '/student/help': typeof StudentHelpRoute
@@ -315,6 +338,7 @@ export interface FileRoutesByTo {
   '/student/profile': typeof StudentProfileRoute
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
+  '/student/study-planner': typeof StudentStudyPlannerRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -350,6 +374,8 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/teachers': typeof AdminTeachersRoute
   '/admin/users': typeof AdminUsersRoute
+  '/student/ai-quiz': typeof StudentAiQuizRoute
+  '/student/ai-tutor': typeof StudentAiTutorRoute
   '/student/dashboard': typeof StudentDashboardRoute
   '/student/exams': typeof StudentExamsRoute
   '/student/help': typeof StudentHelpRoute
@@ -358,6 +384,7 @@ export interface FileRoutesById {
   '/student/profile': typeof StudentProfileRoute
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
+  '/student/study-planner': typeof StudentStudyPlannerRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -394,6 +421,8 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/teachers'
     | '/admin/users'
+    | '/student/ai-quiz'
+    | '/student/ai-tutor'
     | '/student/dashboard'
     | '/student/exams'
     | '/student/help'
@@ -402,6 +431,7 @@ export interface FileRouteTypes {
     | '/student/profile'
     | '/student/results'
     | '/student/settings'
+    | '/student/study-planner'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -431,6 +461,8 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/teachers'
     | '/admin/users'
+    | '/student/ai-quiz'
+    | '/student/ai-tutor'
     | '/student/dashboard'
     | '/student/exams'
     | '/student/help'
@@ -439,6 +471,7 @@ export interface FileRouteTypes {
     | '/student/profile'
     | '/student/results'
     | '/student/settings'
+    | '/student/study-planner'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -473,6 +506,8 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/teachers'
     | '/admin/users'
+    | '/student/ai-quiz'
+    | '/student/ai-tutor'
     | '/student/dashboard'
     | '/student/exams'
     | '/student/help'
@@ -481,6 +516,7 @@ export interface FileRouteTypes {
     | '/student/profile'
     | '/student/results'
     | '/student/settings'
+    | '/student/study-planner'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -633,6 +669,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TeacherCreateExamRouteImport
       parentRoute: typeof TeacherRoute
     }
+    '/student/study-planner': {
+      id: '/student/study-planner'
+      path: '/study-planner'
+      fullPath: '/student/study-planner'
+      preLoaderRoute: typeof StudentStudyPlannerRouteImport
+      parentRoute: typeof StudentRoute
+    }
     '/student/settings': {
       id: '/student/settings'
       path: '/settings'
@@ -687,6 +730,20 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/student/dashboard'
       preLoaderRoute: typeof StudentDashboardRouteImport
+      parentRoute: typeof StudentRoute
+    }
+    '/student/ai-tutor': {
+      id: '/student/ai-tutor'
+      path: '/ai-tutor'
+      fullPath: '/student/ai-tutor'
+      preLoaderRoute: typeof StudentAiTutorRouteImport
+      parentRoute: typeof StudentRoute
+    }
+    '/student/ai-quiz': {
+      id: '/student/ai-quiz'
+      path: '/ai-quiz'
+      fullPath: '/student/ai-quiz'
+      preLoaderRoute: typeof StudentAiQuizRouteImport
       parentRoute: typeof StudentRoute
     }
     '/admin/users': {
@@ -838,6 +895,8 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface StudentRouteChildren {
+  StudentAiQuizRoute: typeof StudentAiQuizRoute
+  StudentAiTutorRoute: typeof StudentAiTutorRoute
   StudentDashboardRoute: typeof StudentDashboardRoute
   StudentExamsRoute: typeof StudentExamsRoute
   StudentHelpRoute: typeof StudentHelpRoute
@@ -846,11 +905,14 @@ interface StudentRouteChildren {
   StudentProfileRoute: typeof StudentProfileRoute
   StudentResultsRoute: typeof StudentResultsRoute
   StudentSettingsRoute: typeof StudentSettingsRoute
+  StudentStudyPlannerRoute: typeof StudentStudyPlannerRoute
   StudentIndexRoute: typeof StudentIndexRoute
   StudentExamExamIdRoute: typeof StudentExamExamIdRoute
 }
 
 const StudentRouteChildren: StudentRouteChildren = {
+  StudentAiQuizRoute: StudentAiQuizRoute,
+  StudentAiTutorRoute: StudentAiTutorRoute,
   StudentDashboardRoute: StudentDashboardRoute,
   StudentExamsRoute: StudentExamsRoute,
   StudentHelpRoute: StudentHelpRoute,
@@ -859,6 +921,7 @@ const StudentRouteChildren: StudentRouteChildren = {
   StudentProfileRoute: StudentProfileRoute,
   StudentResultsRoute: StudentResultsRoute,
   StudentSettingsRoute: StudentSettingsRoute,
+  StudentStudyPlannerRoute: StudentStudyPlannerRoute,
   StudentIndexRoute: StudentIndexRoute,
   StudentExamExamIdRoute: StudentExamExamIdRoute,
 }

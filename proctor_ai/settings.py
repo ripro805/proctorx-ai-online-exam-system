@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'djoser',
     'api',
     'core',
+    'ai_tutor',
     'exams',
     'proctoring',
     'results',

@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getStudentDashboard } from "@/lib/api";
+import { getAiPerformanceAnalysis, getStudentDashboard } from "@/lib/api";
 import { useEffect, useState } from "react";
-import { BookOpen, Clock, CheckCircle2, TrendingUp, Camera, ArrowRight } from "lucide-react";
+import { BookOpen, Clock, CheckCircle2, TrendingUp, Camera, ArrowRight, Sparkles, Brain, Zap } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useAuth } from "@/context/auth-context";
 
@@ -18,6 +18,7 @@ function StudentDashboard() {
   const [ongoing, setOngoing] = useState<any[]>([]);
   const [completed, setCompleted] = useState<any[]>([]);
   const [trend, setTrend] = useState<any[]>([]);
+  const [analysis, setAnalysis] = useState<any>(null);
 
   useEffect(() => {
     getStudentDashboard().then((data) => {
@@ -31,6 +32,7 @@ function StudentDashboard() {
       setCompleted([]);
       setTrend([]);
     });
+    getAiPerformanceAnalysis().then(setAnalysis).catch(() => setAnalysis(null));
   }, []);
 
   const avg = Math.round(completed.reduce((s, e) => s + (e.score ?? 0), 0) / Math.max(completed.length, 1));
@@ -80,6 +82,43 @@ function StudentDashboard() {
             <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
               Webcam & microphone ready. AI proctor will activate when you begin an exam.
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><Sparkles className="h-4 w-4" /> AI Tutor</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>Ask questions, get explanations, and review weak topics in real time.</p>
+            <Button asChild variant="outline" className="w-full justify-start"><Link to="/student/ai-tutor">Open tutor</Link></Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><Brain className="h-4 w-4" /> Weak subjects</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {(analysis?.weak_subjects ?? []).slice(0, 3).map((item: any) => (
+              <div key={item.subject} className="flex items-center justify-between rounded-xl border border-border/60 px-3 py-2">
+                <span>{item.subject}</span>
+                <span className="text-muted-foreground">{item.average}%</span>
+              </div>
+            ))}
+            {(analysis?.weak_subjects ?? []).length === 0 && <p className="text-muted-foreground">No weak-subject analysis yet.</p>}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><Zap className="h-4 w-4" /> AI guidance</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>{analysis?.average_score ? `Average score ${analysis.average_score}%` : "Get a personalized improvement summary from the AI engine."}</p>
+            <Button asChild variant="outline" className="w-full justify-start"><Link to="/student/study-planner">Build study plan</Link></Button>
           </CardContent>
         </Card>
       </div>
