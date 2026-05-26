@@ -163,9 +163,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.CustomUser'
 
+cors_env = os.environ.get('CORS_ALLOWED_ORIGINS') or os.environ.get('CORS_ALLOWED_ORIGIN', '')
 CORS_ALLOWED_ORIGINS = (
-    [origin.strip() for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
-    if os.environ.get('CORS_ALLOWED_ORIGINS')
+    [origin.strip() for origin in cors_env.split(',') if origin.strip()]
+    if cors_env
     else [
         'http://localhost:3000',
         'http://localhost:5173',
@@ -177,6 +178,9 @@ CORS_ALLOWED_ORIGINS = (
 )
 
 CORS_ALLOW_CREDENTIALS = True
+
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

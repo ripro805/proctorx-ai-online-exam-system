@@ -4,6 +4,7 @@ from django.db import models
 
 class Exam(models.Model):
 	title = models.CharField(max_length=200)
+	subject = models.CharField(max_length=120, blank=True)
 	description = models.TextField(blank=True)
 	created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_exams')
 	duration_minutes = models.PositiveIntegerField(default=60)

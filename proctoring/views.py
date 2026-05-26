@@ -1,6 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from rest_framework import permissions, status, viewsets
+from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -26,6 +27,21 @@ def _broadcast_exam_event(exam_id, event_type, message, payload=None):
 	)
 
 
+def _broadcast_global_event(event_type, message, payload=None):
+	channel_layer = get_channel_layer()
+	async_to_sync(channel_layer.group_send)(
+		'proctoring_global',
+		{
+			'type': 'broadcast_message',
+			'message': {
+				'event': event_type,
+				'message': message,
+				'payload': payload or {},
+			},
+		},
+	)
+
+
 class ProctorLogViewSet(viewsets.ReadOnlyModelViewSet):
 	serializer_class = ProctorLogSerializer
 	permission_classes = [IsTeacher]
@@ -38,10 +54,29 @@ class ProctorLogCreateAPIView(APIView):
 	permission_classes = [IsStudent]
 
 	def post(self, request):
-		serializer = ProctorLogSerializer(data=request.data)
-		serializer.is_valid(raise_exception=True)
-		log = serializer.save(student=request.user)
-		_broadcast_exam_event(log.exam_id, log.event_type, 'Proctoring event logged')
+		data = request.data
+		exam_id = data.get('exam') or data.get('exam_id')
+		if not exam_id:
+			return Response({'detail': 'exam required'}, status=status.HTTP_400_BAD_REQUEST)
+		exam = Exam.objects.filter(id=exam_id).first()
+		if not exam:
+			return Response({'detail': 'exam not found'}, status=status.HTTP_404_NOT_FOUND)
+		if not can_student_access_exam(request.user, exam):
+			return Response({'detail': 'exam access denied'}, status=status.HTTP_403_FORBIDDEN)
+		event_type = data.get('event_type')
+		message = data.get('message')
+		log = services.log_proctor_event(request.user, exam, event_type, message=message)
+		payload = {
+			'id': log.id,
+			'exam_id': log.exam_id,
+			'student_id': request.user.id,
+			'student_name': request.user.full_name or request.user.username,
+			'event_type': log.event_type,
+			'message': log.message,
+			'timestamp': log.timestamp.isoformat(),
+		}
+		_broadcast_exam_event(log.exam_id, log.event_type, 'Proctoring event logged', payload=payload)
+		_broadcast_global_event(log.event_type, 'Proctoring event logged', payload=payload)
 		return Response(ProctorLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
 
@@ -88,7 +123,28 @@ class ProctorFrameAPIView(APIView):
 				image_bytes=analysis.get('image_bytes'),
 			)
 			events_created.append(log.event_type)
-			_broadcast_exam_event(exam_id, log.event_type, 'Proctoring warning', payload={'student': request.user.id})
+			payload = {
+				'id': log.id,
+				'exam_id': log.exam_id,
+				'student_id': request.user.id,
+				'student_name': request.user.full_name or request.user.username,
+				'event_type': log.event_type,
+				'message': log.message,
+				'timestamp': log.timestamp.isoformat(),
+			}
+			_broadcast_exam_event(exam_id, log.event_type, 'Proctoring warning', payload=payload)
+			_broadcast_global_event(log.event_type, 'Proctoring warning', payload=payload)
+
+		# Broadcast latest frame for live monitoring
+		frame_payload = {
+			'exam_id': exam_id,
+			'student_id': request.user.id,
+			'student_name': request.user.full_name or request.user.username,
+			'frame': frame_b64,
+			'timestamp': timezone.now().isoformat(),
+		}
+		_broadcast_exam_event(exam_id, 'frame', 'Live frame', payload=frame_payload)
+		_broadcast_global_event('frame', 'Live frame', payload=frame_payload)
 
 		return Response({
 			'face_detected': analysis.get('face_detected', False),

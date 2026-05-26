@@ -13,7 +13,10 @@ class ProctorLog(models.Model):
 		('tab_switch', 'Tab Switch Detected'),
 		('fullscreen_exit', 'Fullscreen Exit'),
 		('copy_attempt', 'Copy Attempt'),
+		('paste_attempt', 'Paste Attempt'),
 		('right_click', 'Right Click'),
+		('exam_started', 'Exam Started'),
+		('exam_submitted', 'Exam Submitted'),
 		('exam_terminated', 'Exam Terminated'),
 		('suspicious_activity', 'Suspicious Activity'),
 	)

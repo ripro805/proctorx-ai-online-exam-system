@@ -2,16 +2,18 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Q
-from django.db.models.functions import TruncMonth
 from django.utils import timezone
+from django.db.models.functions import TruncMonth
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.permissions import IsAdmin, IsStudent, IsTeacher, can_student_access_exam
+from core.models import SystemSetting
+from core.serializers import SystemSettingSerializer
 from exams.models import Exam
 from exams.models import ExamProgress
-from proctoring.models import ProctorLog
+from proctoring.models import ProctorLog, StudentExamSession
 from results.models import Result
 from results.serializers import ResultSerializer
 
@@ -38,10 +40,49 @@ def _trend_from_results(results_qs):
 	return [{'month': _month_label(item['month']), 'score': round(item['score'] or 0, 2)} for item in trend]
 
 
+def _status_for_exam(exam, now):
+	if exam.start_time <= now <= exam.end_time:
+		return 'ongoing'
+	if exam.start_time > now:
+		return 'upcoming'
+	return 'completed'
+
+
+def _exam_card_payload(exam, now, status_override=None, score=None):
+	status = status_override or _status_for_exam(exam, now)
+	return {
+		'id': exam.id,
+		'title': exam.title,
+		'subject': exam.subject or 'General',
+		'duration': exam.duration_minutes,
+		'questions': exam.questions.count(),
+		'date': exam.start_time.date().isoformat() if exam.start_time else None,
+		'status': status,
+		'score': score,
+	}
+
+
+def _violation_data(logs_qs, now):
+	# Build last 7 days counts
+	days = []
+	for i in range(6, -1, -1):
+		day = (now - timedelta(days=i)).date()
+		days.append(day)
+	counts = {day: 0 for day in days}
+	for log in logs_qs:
+		day = log.timestamp.date()
+		if day in counts:
+			counts[day] += 1
+	return [
+		{'day': day.strftime('%a'), 'count': counts[day]}
+		for day in days
+	]
+
+
 def _severity_for_event(event_type):
 	if event_type in ('multiple_faces', 'exam_terminated'):
 		return 'high'
-	if event_type in ('tab_switch_detected', 'suspicious_movement', 'face_not_centered'):
+	if event_type in ('tab_switch', 'suspicious_movement', 'face_not_centered', 'fullscreen_exit', 'no_face'):
 		return 'medium'
 	return 'low'
 
@@ -52,40 +93,70 @@ class StudentDashboardAPIView(APIView):
 	def get(self, request):
 		now = timezone.now()
 		published = Exam.objects.filter(is_published=True)
-		upcoming = published.filter(start_time__gt=now).order_by('start_time')[:10]
-		ongoing = published.filter(start_time__lte=now, end_time__gte=now).order_by('end_time')[:10]
+		upcoming = [e for e in published.filter(start_time__gt=now).order_by('start_time') if can_student_access_exam(request.user, e)][:10]
+		ongoing = [e for e in published.filter(start_time__lte=now, end_time__gte=now).order_by('end_time') if can_student_access_exam(request.user, e)][:10]
 		student_results = Result.objects.filter(student=request.user).select_related('exam')
-		completed_exam_ids = list(student_results.values_list('exam_id', flat=True))
-		completed_exams = Exam.objects.filter(id__in=completed_exam_ids).order_by('-end_time')[:10]
-
-		def _exam_payload(exam, status_override=None):
-			status = status_override or ('ongoing' if exam.start_time <= now <= exam.end_time else 'upcoming')
-			return {
-				'id': exam.id,
-				'title': exam.title,
-				'description': exam.description,
-				'duration_minutes': exam.duration_minutes,
-				'start_time': exam.start_time,
-				'end_time': exam.end_time,
-				'question_count': exam.questions.count(),
-				'status': status,
-			}
 
 		completed_payload = []
 		for result in student_results.order_by('-created_at')[:10]:
 			exam = result.exam
 			completed_payload.append({
-				**_exam_payload(exam, status_override='completed'),
-				'score': result.percentage,
+				**_exam_card_payload(exam, now, status_override='completed', score=round(result.percentage or 0, 2)),
 				'result_id': result.id,
 			})
 
 		return Response({
-			'upcoming': [_exam_payload(e, status_override='upcoming') for e in upcoming],
-			'ongoing': [_exam_payload(e, status_override='ongoing') for e in ongoing],
+			'upcoming': [_exam_card_payload(e, now, status_override='upcoming') for e in upcoming],
+			'ongoing': [_exam_card_payload(e, now, status_override='ongoing') for e in ongoing],
 			'completed': completed_payload,
 			'performance_trend': _trend_from_results(student_results),
 		}, status=status.HTTP_200_OK)
+
+
+class StudentResultsOverviewAPIView(APIView):
+	permission_classes = [IsStudent]
+
+	def get(self, request):
+		now = timezone.now()
+		results = Result.objects.filter(student=request.user).select_related('exam').order_by('-created_at')
+		payload = []
+		for result in results:
+			exam = result.exam
+			payload.append({
+				**_exam_card_payload(exam, now, status_override='completed', score=round(result.percentage or 0, 2)),
+				'result_id': result.id,
+			})
+		return Response({
+			'performance_trend': _trend_from_results(results),
+			'results': payload,
+		}, status=status.HTTP_200_OK)
+
+
+class AdminAnalyticsAPIView(APIView):
+	permission_classes = [IsAdmin]
+
+	def get(self, request):
+		now = timezone.now()
+		return Response({
+			'performance_trend': _trend_from_results(Result.objects.all()),
+			'violation_data': _violation_data(ProctorLog.objects.all(), now),
+		}, status=status.HTTP_200_OK)
+
+
+class StudentExamsAPIView(APIView):
+	permission_classes = [IsStudent]
+
+	def get(self, request):
+		now = timezone.now()
+		exams = Exam.objects.filter(is_published=True).order_by('start_time')
+		results = Result.objects.filter(student=request.user)
+		scores = {r.exam_id: round(r.percentage or 0, 2) for r in results}
+		data = []
+		for exam in exams:
+			if not can_student_access_exam(request.user, exam):
+				continue
+			data.append(_exam_card_payload(exam, now, score=scores.get(exam.id)))
+		return Response({'exams': data}, status=status.HTTP_200_OK)
 
 
 class StudentNotificationsAPIView(APIView):
@@ -107,7 +178,15 @@ class StudentNotificationsAPIView(APIView):
 				'time': result.created_at,
 			})
 		items = sorted(items, key=lambda x: x['time'], reverse=True)[:10]
-		return Response({'notifications': items}, status=status.HTTP_200_OK)
+		payload = [
+			{
+				'id': item['id'],
+				'text': item['text'],
+				'time': item['time'],
+			}
+			for item in items
+		]
+		return Response({'notifications': payload}, status=status.HTTP_200_OK)
 
 
 class AdminSummaryAPIView(APIView):
@@ -119,12 +198,14 @@ class AdminSummaryAPIView(APIView):
 		active_exams = Exam.objects.filter(is_published=True, start_time__lte=now, end_time__gte=now).count()
 		recent_alerts = ProctorLog.objects.filter(timestamp__gte=now - timedelta(hours=24)).count()
 		trend = _trend_from_results(Result.objects.all())
+		violation_data = _violation_data(ProctorLog.objects.all(), now)
 		return Response({
 			'total_users': total_users,
 			'active_exams': active_exams,
-			'open_alerts': recent_alerts,
+			'violations': recent_alerts,
 			'uptime': 99.99,
 			'performance_trend': trend,
+			'violation_data': violation_data,
 		}, status=status.HTTP_200_OK)
 
 
@@ -139,7 +220,8 @@ class AdminSecurityAlertsAPIView(APIView):
 			alerts.append({
 				'id': log.id,
 				'severity': severity,
-				'text': f"{log.event_type.replace('_', ' ').title()} — {log.exam.title}",
+				'who': log.student.full_name or log.student.username,
+				'what': f"{log.event_type.replace('_', ' ').title()} — {log.exam.title}",
 				'time': log.timestamp,
 			})
 		return Response({'alerts': alerts}, status=status.HTTP_200_OK)
@@ -154,7 +236,7 @@ class AdminActivityAPIView(APIView):
 			activities.append({
 				'id': f'result-{result.id}',
 				'type': 'result',
-				'message': f"{result.student.username} submitted {result.exam.title}",
+				'message': f"{result.student.full_name or result.student.username} submitted {result.exam.title}",
 				'time': result.created_at,
 			})
 		for log in ProctorLog.objects.select_related('student', 'exam').order_by('-timestamp')[:10]:
@@ -177,13 +259,30 @@ class AdminUsersAPIView(APIView):
 		for user in users:
 			data.append({
 				'id': user.id,
-				'name': user.username,
+				'name': user.full_name or user.username,
 				'email': user.email,
 				'role': user.role,
 				'joined': user.date_joined,
-				'status': 'Active' if user.is_active else 'Inactive',
+				'status': 'active' if user.is_active else 'inactive',
 			})
 		return Response({'users': data}, status=status.HTTP_200_OK)
+
+
+class AdminTeachersAPIView(APIView):
+	permission_classes = [IsAdmin]
+
+	def get(self, request):
+		teachers = User.objects.filter(role='teacher').order_by('-date_joined')
+		data = []
+		for teacher in teachers:
+			data.append({
+				'id': teacher.id,
+				'name': teacher.full_name or teacher.username,
+				'email': teacher.email,
+				'exams_created': teacher.created_exams.count(),
+				'status': 'active' if teacher.is_active else 'inactive',
+			})
+		return Response({'teachers': data}, status=status.HTTP_200_OK)
 
 
 class TeacherSummaryAPIView(APIView):
@@ -195,13 +294,16 @@ class TeacherSummaryAPIView(APIView):
 		results = Result.objects.filter(exam__in=exams)
 		total_students = results.values('student_id').distinct().count()
 		active_exams = exams.filter(start_time__lte=now, end_time__gte=now).count()
-		live_now = ProctorLog.objects.filter(exam__in=exams, timestamp__gte=now - timedelta(minutes=10)).values('exam_id').distinct().count()
+		violations = ProctorLog.objects.filter(exam__in=exams, timestamp__gte=now - timedelta(days=7)).count()
 		avg_score = results.aggregate(avg=Avg('percentage'))['avg'] or 0
 		return Response({
-			'total_students': total_students,
+			'total_exams': exams.count(),
 			'active_exams': active_exams,
-			'live_now': live_now,
+			'students': total_students,
+			'violations': violations,
 			'avg_score': round(avg_score, 2),
+			'performance_trend': _trend_from_results(results),
+			'violation_data': _violation_data(ProctorLog.objects.filter(exam__in=exams), now),
 		}, status=status.HTTP_200_OK)
 
 
@@ -216,7 +318,7 @@ class TeacherMonitorAPIView(APIView):
 		for log in logs:
 			entry = students.setdefault(log.student_id, {
 				'id': log.student_id,
-				'name': log.student.username,
+				'name': log.student.full_name or log.student.username,
 				'course': log.exam.title,
 				'flags': 0,
 				'severity': 'ok',
@@ -247,7 +349,7 @@ class TeacherAnalyticsAPIView(APIView):
 		results = Result.objects.filter(exam__in=exams)
 		by_exam = results.values('exam__title').annotate(score=Avg('percentage')).order_by('exam__title')
 		data = [{'subject': item['exam__title'], 'score': round(item['score'] or 0, 2)} for item in by_exam]
-		return Response({'subject_scores': data}, status=status.HTTP_200_OK)
+		return Response({'subject_scores': data, 'performance_trend': _trend_from_results(results)}, status=status.HTTP_200_OK)
 
 
 class TeacherExamsAPIView(APIView):
@@ -260,6 +362,7 @@ class TeacherExamsAPIView(APIView):
 			data.append({
 				'id': exam.id,
 				'title': exam.title,
+				'subject': exam.subject or 'General',
 				'start_time': exam.start_time,
 				'end_time': exam.end_time,
 				'is_published': exam.is_published,
@@ -267,6 +370,34 @@ class TeacherExamsAPIView(APIView):
 				'questions': exam.questions.count(),
 			})
 		return Response({'exams': data}, status=status.HTTP_200_OK)
+
+
+class TeacherStudentsAPIView(APIView):
+	permission_classes = [IsTeacher]
+
+	def get(self, request):
+		results = Result.objects.filter(exam__created_by=request.user).select_related('student')
+		data = {}
+		for item in results:
+			entry = data.setdefault(item.student_id, {
+				'id': item.student_id,
+				'name': item.student.full_name or item.student.username,
+				'email': item.student.email,
+				'status': 'active' if item.student.is_active else 'inactive',
+				'avg_score': [],
+			})
+			entry['avg_score'].append(item.percentage or 0)
+		payload = []
+		for entry in data.values():
+			avg = round(sum(entry['avg_score']) / max(1, len(entry['avg_score'])), 2)
+			payload.append({
+				'id': entry['id'],
+				'name': entry['name'],
+				'email': entry['email'],
+				'status': entry['status'],
+				'avg_score': avg,
+			})
+		return Response({'students': payload}, status=status.HTTP_200_OK)
 
 
 class TeacherResultsAPIView(APIView):
@@ -279,7 +410,14 @@ class TeacherResultsAPIView(APIView):
 			.select_related('student', 'exam')
 			.order_by('-created_at')
 		)
-		return Response({'results': ResultSerializer(results, many=True).data}, status=status.HTTP_200_OK)
+		payload = []
+		for item in results:
+			warnings = StudentExamSession.objects.filter(student=item.student, exam=item.exam).values_list('warning_count', flat=True).first() or 0
+			integrity = max(0, 100 - (warnings * 5))
+			data = ResultSerializer(item).data
+			data['integrity'] = integrity
+			payload.append(data)
+		return Response({'results': payload}, status=status.HTTP_200_OK)
 
 
 class TeacherReportsAPIView(APIView):
@@ -293,6 +431,13 @@ class TeacherReportsAPIView(APIView):
 		fail_count = results.count() - pass_count
 		avg_score = results.aggregate(avg=Avg('percentage'))['avg'] or 0
 		cheating_alerts = ProctorLog.objects.filter(exam__in=exams, timestamp__gte=now - timedelta(days=30)).count()
+		distribution = [
+			{'name': 'A (90+)', 'value': results.filter(percentage__gte=90).count()},
+			{'name': 'B (80–89)', 'value': results.filter(percentage__gte=80, percentage__lt=90).count()},
+			{'name': 'C (70–79)', 'value': results.filter(percentage__gte=70, percentage__lt=80).count()},
+			{'name': 'D (60–69)', 'value': results.filter(percentage__gte=60, percentage__lt=70).count()},
+			{'name': 'F (<60)', 'value': results.filter(percentage__lt=60).count()},
+		]
 		return Response({
 			'summary': {
 				'total_exams': exams.count(),
@@ -306,6 +451,7 @@ class TeacherReportsAPIView(APIView):
 				'fail': fail_count,
 			},
 			'performance_trend': _trend_from_results(results),
+			'distribution': distribution,
 		}, status=status.HTTP_200_OK)
 
 
@@ -328,7 +474,7 @@ class AdminProctoringAPIView(APIView):
 			key = (log.student_id, log.exam_id)
 			entry = streams.setdefault(key, {
 				'id': f'{log.student_id}-{log.exam_id}',
-				'name': log.student.username,
+				'name': log.student.full_name or log.student.username,
 				'exam': log.exam.title,
 				'status': 'ok',
 				'flags': 0,
@@ -372,6 +518,21 @@ class AdminReportsAPIView(APIView):
 			},
 			'performance_trend': _trend_from_results(results),
 		}, status=status.HTTP_200_OK)
+
+
+class SystemSettingsAPIView(APIView):
+	permission_classes = [IsAdmin]
+
+	def get(self, request):
+		settings_obj, _ = SystemSetting.objects.get_or_create(id=1)
+		return Response(SystemSettingSerializer(settings_obj).data, status=status.HTTP_200_OK)
+
+	def put(self, request):
+		settings_obj, _ = SystemSetting.objects.get_or_create(id=1)
+		serializer = SystemSettingSerializer(settings_obj, data=request.data, partial=True)
+		serializer.is_valid(raise_exception=True)
+		serializer.save()
+		return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SaveExamProgressAPIView(APIView):
