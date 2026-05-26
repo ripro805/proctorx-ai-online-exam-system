@@ -32,6 +32,7 @@ export const teacherNav: NavItem[] = [
   { title: "Monitoring", url: "/teacher/monitoring", icon: Eye },
   { title: "Results", url: "/teacher/results", icon: BarChart3 },
   { title: "Reports", url: "/teacher/reports", icon: FileBarChart },
+  { title: "Profile", url: "/teacher/profile", icon: User },
 ];
 
 import {

@@ -104,10 +104,16 @@ export function DashboardNavbar() {
             <DropdownMenuItem asChild>
               <Link to={`/${user?.role}/dashboard`}><Activity className="mr-2 h-4 w-4" />Dashboard</Link>
             </DropdownMenuItem>
-            {user?.role === "student" && (
+            {(user?.role === "student" || user?.role === "teacher") && (
               <>
-                <DropdownMenuItem asChild><Link to="/student/profile"><User className="mr-2 h-4 w-4" />Profile</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild><Link to="/student/settings"><Settings className="mr-2 h-4 w-4" />Settings</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to={`/${user?.role}/profile`}><User className="mr-2 h-4 w-4" />Profile</Link>
+                </DropdownMenuItem>
+                {user?.role === "student" && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/student/settings"><Settings className="mr-2 h-4 w-4" />Settings</Link>
+                  </DropdownMenuItem>
+                )}
               </>
             )}
             <DropdownMenuSeparator />

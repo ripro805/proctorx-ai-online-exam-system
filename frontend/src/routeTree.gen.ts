@@ -23,6 +23,7 @@ import { Route as TeacherStudentsRouteImport } from './routes/teacher.students'
 import { Route as TeacherResultsRouteImport } from './routes/teacher.results'
 import { Route as TeacherReportsRouteImport } from './routes/teacher.reports'
 import { Route as TeacherQuestionsRouteImport } from './routes/teacher.questions'
+import { Route as TeacherProfileRouteImport } from './routes/teacher.profile'
 import { Route as TeacherMonitoringRouteImport } from './routes/teacher.monitoring'
 import { Route as TeacherManageExamsRouteImport } from './routes/teacher.manage-exams'
 import { Route as TeacherDashboardRouteImport } from './routes/teacher.dashboard'
@@ -121,6 +122,11 @@ const TeacherReportsRoute = TeacherReportsRouteImport.update({
 const TeacherQuestionsRoute = TeacherQuestionsRouteImport.update({
   id: '/questions',
   path: '/questions',
+  getParentRoute: () => TeacherRoute,
+} as any)
+const TeacherProfileRoute = TeacherProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => TeacherRoute,
 } as any)
 const TeacherMonitoringRoute = TeacherMonitoringRouteImport.update({
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
   '/teacher/monitoring': typeof TeacherMonitoringRoute
+  '/teacher/profile': typeof TeacherProfileRoute
   '/teacher/questions': typeof TeacherQuestionsRoute
   '/teacher/reports': typeof TeacherReportsRoute
   '/teacher/results': typeof TeacherResultsRoute
@@ -351,6 +358,7 @@ export interface FileRoutesByTo {
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
   '/teacher/monitoring': typeof TeacherMonitoringRoute
+  '/teacher/profile': typeof TeacherProfileRoute
   '/teacher/questions': typeof TeacherQuestionsRoute
   '/teacher/reports': typeof TeacherReportsRoute
   '/teacher/results': typeof TeacherResultsRoute
@@ -398,6 +406,7 @@ export interface FileRoutesById {
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
   '/teacher/monitoring': typeof TeacherMonitoringRoute
+  '/teacher/profile': typeof TeacherProfileRoute
   '/teacher/questions': typeof TeacherQuestionsRoute
   '/teacher/reports': typeof TeacherReportsRoute
   '/teacher/results': typeof TeacherResultsRoute
@@ -446,6 +455,7 @@ export interface FileRouteTypes {
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
     | '/teacher/monitoring'
+    | '/teacher/profile'
     | '/teacher/questions'
     | '/teacher/reports'
     | '/teacher/results'
@@ -487,6 +497,7 @@ export interface FileRouteTypes {
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
     | '/teacher/monitoring'
+    | '/teacher/profile'
     | '/teacher/questions'
     | '/teacher/reports'
     | '/teacher/results'
@@ -533,6 +544,7 @@ export interface FileRouteTypes {
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
     | '/teacher/monitoring'
+    | '/teacher/profile'
     | '/teacher/questions'
     | '/teacher/reports'
     | '/teacher/results'
@@ -651,6 +663,13 @@ declare module '@tanstack/react-router' {
       path: '/questions'
       fullPath: '/teacher/questions'
       preLoaderRoute: typeof TeacherQuestionsRouteImport
+      parentRoute: typeof TeacherRoute
+    }
+    '/teacher/profile': {
+      id: '/teacher/profile'
+      path: '/profile'
+      fullPath: '/teacher/profile'
+      preLoaderRoute: typeof TeacherProfileRouteImport
       parentRoute: typeof TeacherRoute
     }
     '/teacher/monitoring': {
@@ -954,6 +973,7 @@ interface TeacherRouteChildren {
   TeacherDashboardRoute: typeof TeacherDashboardRoute
   TeacherManageExamsRoute: typeof TeacherManageExamsRoute
   TeacherMonitoringRoute: typeof TeacherMonitoringRoute
+  TeacherProfileRoute: typeof TeacherProfileRoute
   TeacherQuestionsRoute: typeof TeacherQuestionsRoute
   TeacherReportsRoute: typeof TeacherReportsRoute
   TeacherResultsRoute: typeof TeacherResultsRoute
@@ -967,6 +987,7 @@ const TeacherRouteChildren: TeacherRouteChildren = {
   TeacherDashboardRoute: TeacherDashboardRoute,
   TeacherManageExamsRoute: TeacherManageExamsRoute,
   TeacherMonitoringRoute: TeacherMonitoringRoute,
+  TeacherProfileRoute: TeacherProfileRoute,
   TeacherQuestionsRoute: TeacherQuestionsRoute,
   TeacherReportsRoute: TeacherReportsRoute,
   TeacherResultsRoute: TeacherResultsRoute,
