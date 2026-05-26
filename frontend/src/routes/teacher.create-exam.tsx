@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChangeEvent, useMemo, useState } from "react";
-import { createExam } from "@/lib/api";
+import { createExam, getQuestions } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -33,6 +33,10 @@ function CreateExamPage() {
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [questions, setQuestions] = useState<QuestionDraft[]>(() => defaultQuestions(5));
+  const [bankOpen, setBankOpen] = useState(false);
+  const [bankQuestions, setBankQuestions] = useState<any[]>([]);
+  const [bankSelected, setBankSelected] = useState<number[]>([]);
+  const [bankSearch, setBankSearch] = useState("");
 
   const canAddMore = questions.length < questionCount;
 
@@ -68,6 +72,40 @@ function CreateExamPage() {
   const addQuestion = () => {
     if (!canAddMore) return;
     setQuestions((prev) => [...prev, emptyQuestion()]);
+  };
+
+  const openBankModal = async () => {
+    setBankOpen(true);
+    try {
+      const data = await getQuestions({ bank: true, subject });
+      const list = normalizeList(data, ["results", "questions", "items"]);
+      setBankQuestions(list);
+      setBankSelected([]);
+    } catch (err) {
+      setBankQuestions([]);
+    }
+  };
+
+  const toggleBankSelect = (id: number) => {
+    setBankSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const addBankedToExam = () => {
+    if (!bankSelected.length) return;
+    const selected = bankQuestions.filter((q) => bankSelected.includes(q.id));
+    const drafts = selected.map((q) => ({
+      text: q.text || "",
+      question_type: q.question_type || "mcq",
+      marks: q.marks || 1,
+      choices: (q.choices || []).map((c: any) => ({ text: c.text || "", is_correct: !!c.is_correct })),
+      correct_answer_data: q.correct_answer_data || {},
+    } as QuestionDraft));
+    setQuestions((prev) => {
+      const space = Math.max(0, questionCount - prev.length);
+      const toAdd = drafts.slice(0, space);
+      return [...prev, ...toAdd];
+    });
+    setBankOpen(false);
   };
 
   const removeQuestion = (index: number) => {
@@ -191,9 +229,14 @@ function CreateExamPage() {
         <Card className="border-border/60 mt-4">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle>Questions</CardTitle>
-            <Button type="button" variant="outline" onClick={addQuestion} disabled={!canAddMore}>
-              <Plus className="h-4 w-4 mr-1" /> Add question
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={openBankModal}>
+                <Plus className="h-4 w-4 mr-1" /> Select from bank
+              </Button>
+              <Button type="button" variant="outline" onClick={addQuestion} disabled={!canAddMore}>
+                <Plus className="h-4 w-4 mr-1" /> Add question
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
@@ -286,6 +329,37 @@ function CreateExamPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Bank modal */}
+              {bankOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/40" onClick={() => setBankOpen(false)} />
+                  <div className="bg-surface p-6 rounded-lg w-[80%] max-h-[80vh] overflow-y-auto z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-medium">Select questions from bank</h3>
+                      <div className="flex items-center gap-2">
+                        <Input placeholder="Search…" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
+                        <Button variant="outline" onClick={() => setBankOpen(false)}>Close</Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {(bankQuestions.filter((q) => !bankSearch || `${q.text} ${q.exam_title ?? ''} ${q.subject ?? ''}`.toLowerCase().includes(bankSearch.toLowerCase()))).map((q) => (
+                        <div key={q.id} className="flex items-start gap-3 p-3 border rounded hover:bg-muted">
+                          <input type="checkbox" checked={bankSelected.includes(q.id)} onChange={() => toggleBankSelect(q.id)} />
+                          <div className="flex-1">
+                            <div className="font-medium">{q.text}</div>
+                            <div className="text-xs text-muted-foreground mt-1">{q.question_type} • {q.exam_title ?? ''} • {q.subject ?? ''}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-end mt-4">
+                      <Button variant="outline" onClick={() => setBankOpen(false)}>Cancel</Button>
+                      <Button className="ml-2" onClick={addBankedToExam}>Add selected</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             ))}
           </CardContent>
         </Card>
