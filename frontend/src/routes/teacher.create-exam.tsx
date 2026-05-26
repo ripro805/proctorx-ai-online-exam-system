@@ -1,26 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChangeEvent, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { BookOpen, Check, Plus, Search, Trash2 } from "lucide-react";
+
+import { createExam, getQuestions } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChangeEvent, useMemo, useState } from "react";
-import { createExam, getQuestions } from "@/lib/api";
-import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 type QuestionType = "mcq" | "description" | "image";
-
 type ChoiceDraft = { text: string; is_correct: boolean };
-
 type QuestionDraft = {
   text: string;
   question_type: QuestionType;
   marks: number;
   choices: ChoiceDraft[];
   correct_answer_data: { text?: string; image?: string };
+  explanation?: string;
+  sourceQuestionId?: number;
+  sourceExamTitle?: string;
+  sourceSubject?: string;
 };
 
 export const Route = createFileRoute("/teacher/create-exam")({ component: CreateExamPage });
@@ -33,13 +37,15 @@ function CreateExamPage() {
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [questions, setQuestions] = useState<QuestionDraft[]>(() => defaultQuestions(5));
+
   const [bankOpen, setBankOpen] = useState(false);
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankTargetIndex, setBankTargetIndex] = useState<number | null>(null);
   const [bankQuestions, setBankQuestions] = useState<any[]>([]);
-  const [bankSelected, setBankSelected] = useState<number[]>([]);
   const [bankSearch, setBankSearch] = useState("");
+  const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
 
   const canAddMore = questions.length < questionCount;
-
   const normalizedQuestions = useMemo(() => questions.slice(0, questionCount), [questions, questionCount]);
 
   const setQuestionAt = (index: number, patch: Partial<QuestionDraft>) => {
@@ -74,40 +80,6 @@ function CreateExamPage() {
     setQuestions((prev) => [...prev, emptyQuestion()]);
   };
 
-  const openBankModal = async () => {
-    setBankOpen(true);
-    try {
-      const data = await getQuestions({ bank: true, subject });
-      const list = normalizeList(data, ["results", "questions", "items"]);
-      setBankQuestions(list);
-      setBankSelected([]);
-    } catch (err) {
-      setBankQuestions([]);
-    }
-  };
-
-  const toggleBankSelect = (id: number) => {
-    setBankSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const addBankedToExam = () => {
-    if (!bankSelected.length) return;
-    const selected = bankQuestions.filter((q) => bankSelected.includes(q.id));
-    const drafts = selected.map((q) => ({
-      text: q.text || "",
-      question_type: q.question_type || "mcq",
-      marks: q.marks || 1,
-      choices: (q.choices || []).map((c: any) => ({ text: c.text || "", is_correct: !!c.is_correct })),
-      correct_answer_data: q.correct_answer_data || {},
-    } as QuestionDraft));
-    setQuestions((prev) => {
-      const space = Math.max(0, questionCount - prev.length);
-      const toAdd = drafts.slice(0, space);
-      return [...prev, ...toAdd];
-    });
-    setBankOpen(false);
-  };
-
   const removeQuestion = (index: number) => {
     setQuestions((prev) => prev.filter((_, i) => i !== index));
   };
@@ -134,59 +106,111 @@ function CreateExamPage() {
     setQuestionAt(index, { correct_answer_data: { image: dataUrl } });
   };
 
+  const openBankPicker = async (index: number) => {
+    setBankTargetIndex(index);
+    setBankSearch("");
+    setSelectedBankId(null);
+    setBankOpen(true);
+    setBankLoading(true);
+    try {
+      const data = await getQuestions({ bank: true, subject });
+      const list = normalizeList(data, ["results", "questions", "items"]);
+      setBankQuestions(list);
+      setSelectedBankId(list[0]?.id ?? null);
+    } catch {
+      setBankQuestions([]);
+      toast.error("Failed to load question bank");
+    } finally {
+      setBankLoading(false);
+    }
+  };
+
+  const applyBankQuestion = () => {
+    if (bankTargetIndex === null) return;
+    const selected = bankQuestions.find((q) => q.id === selectedBankId);
+    if (!selected) {
+      toast.error("Please select a question from the bank");
+      return;
+    }
+    setQuestionAt(bankTargetIndex, mapBankQuestion(selected));
+    setBankOpen(false);
+  };
+
+  const addNewQuestionFromBank = async () => {
+    if (!canAddMore) {
+      toast.error("Question limit reached");
+      return;
+    }
+    const nextIndex = questions.length;
+    addQuestion();
+    await openBankPicker(nextIndex);
+  };
+
+  const filteredQuestions = filteredBankQuestions(bankQuestions, bankSearch);
+
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold">Create exam</h1>
         <p className="text-muted-foreground">Configure a new proctored examination.</p>
       </div>
-      <form onSubmit={async (e) => {
-        e.preventDefault();
-        const form = new FormData(e.currentTarget);
-        const title = String(form.get("title") ?? "");
-        const description = String(form.get("description") ?? "");
-        const subjectValue = subject || "General";
-        const duration = Number(form.get("duration") ?? 60);
-        const date = String(form.get("schedule_date") ?? "");
-        const time = String(form.get("schedule_time") ?? "");
-        const schedule = date && time ? new Date(`${date}T${time}:00`) : new Date();
-        const maxQuestions = questionCount;
-        const nestedQuestions = normalizedQuestions.map((q) => ({
-          text: q.text,
-          question_type: q.question_type,
-          marks: q.marks,
-          choices: q.question_type === "mcq"
-            ? q.choices
-                .map((c) => ({ text: c.text, is_correct: c.is_correct }))
-                .filter((c) => c.text.trim())
-            : [],
-          correct_answer_data: q.question_type === "description"
-            ? { text: q.correct_answer_data.text ?? "" }
-            : q.question_type === "image"
-              ? { image: q.correct_answer_data.image ?? "" }
-              : {},
-        }));
-        const end = new Date(schedule.getTime() + duration * 60000);
-        await createExam({
-          title,
-          description,
-          subject: subjectValue,
-          duration_minutes: duration,
-          max_questions: maxQuestions,
-          start_time: schedule.toISOString(),
-          end_time: end.toISOString(),
-          is_published: publish,
-          questions: nestedQuestions,
-        }).then(() => {
-          toast.success(publish ? "Exam created and published!" : "Exam saved as draft.");
-        }).catch(() => toast.error("Failed to create exam"));
-      }}>
+
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
+          const title = String(form.get("title") ?? "");
+          const description = String(form.get("description") ?? "");
+          const subjectValue = subject || "General";
+          const duration = Number(form.get("duration") ?? 60);
+          const date = String(form.get("schedule_date") ?? "");
+          const time = String(form.get("schedule_time") ?? "");
+          const schedule = date && time ? new Date(`${date}T${time}:00`) : new Date();
+          const end = new Date(schedule.getTime() + duration * 60000);
+
+          try {
+            await createExam({
+              title,
+              description,
+              subject: subjectValue,
+              duration_minutes: duration,
+              max_questions: questionCount,
+              start_time: schedule.toISOString(),
+              end_time: end.toISOString(),
+              is_published: publish,
+              questions: normalizedQuestions.map((q) => ({
+                text: q.text,
+                question_type: q.question_type,
+                marks: q.marks,
+                explanation: q.explanation ?? "",
+                choices: q.question_type === "mcq"
+                  ? q.choices.map((c) => ({ text: c.text, is_correct: c.is_correct })).filter((c) => c.text.trim())
+                  : [],
+                correct_answer_data: q.question_type === "description"
+                  ? { text: q.correct_answer_data.text ?? "" }
+                  : q.question_type === "image"
+                    ? { image: q.correct_answer_data.image ?? "" }
+                    : {},
+              })),
+            });
+            toast.success(publish ? "Exam created and published!" : "Exam saved as draft.");
+          } catch {
+            toast.error("Failed to create exam");
+          }
+        }}
+      >
         <Card className="border-border/60">
           <CardHeader><CardTitle>Exam details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="t">Title</Label><Input id="t" name="title" required placeholder="e.g. Midterm — Data Structures" /></div>
-            <div className="space-y-2"><Label htmlFor="d">Description</Label><Textarea id="d" name="description" rows={3} placeholder="Instructions and topics covered…" /></div>
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="t">Title</Label>
+              <Input id="t" name="title" required placeholder="e.g. Midterm — Data Structures" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="d">Description</Label>
+              <Textarea id="d" name="description" rows={3} placeholder="Instructions and topics covered…" />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Subject</Label>
                 <Select defaultValue="Computer Science" onValueChange={setSubject}>
@@ -199,9 +223,18 @@ function CreateExamPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label htmlFor="dur">Duration (minutes)</Label><Input id="dur" name="duration" type="number" defaultValue={60} min={10} /></div>
-              <div className="space-y-2"><Label htmlFor="schedule_date">Scheduled date</Label><Input id="schedule_date" name="schedule_date" type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="schedule_time">Scheduled time</Label><Input id="schedule_time" name="schedule_time" type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} /></div>
+              <div className="space-y-2">
+                <Label htmlFor="dur">Duration (minutes)</Label>
+                <Input id="dur" name="duration" type="number" defaultValue={60} min={10} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule_date">Scheduled date</Label>
+                <Input id="schedule_date" name="schedule_date" type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule_time">Scheduled time</Label>
+                <Input id="schedule_time" name="schedule_time" type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="qn">Number of questions</Label>
                 <Input
@@ -230,31 +263,50 @@ function CreateExamPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle>Questions</CardTitle>
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={openBankModal}>
-                <Plus className="h-4 w-4 mr-1" /> Select from bank
+              <Button type="button" variant="outline" onClick={() => void addNewQuestionFromBank()} disabled={!canAddMore}>
+                <BookOpen className="h-4 w-4 mr-1" /> Reuse from bank
               </Button>
-              <Button type="button" variant="outline" onClick={addQuestion} disabled={!canAddMore}>
-                <Plus className="h-4 w-4 mr-1" /> Add question
+              <Button type="button" onClick={addQuestion} disabled={!canAddMore}>
+                <Plus className="h-4 w-4 mr-1" /> Add blank question
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Create up to <span className="font-medium text-foreground">{questionCount}</span> questions. Each question can be MCQ, description, or image-based.
+              Create up to <span className="font-medium text-foreground">{questionCount}</span> questions. Each card can be manually created or filled from the question bank.
             </p>
+
             {normalizedQuestions.map((q, index) => (
               <Card key={index} className="border-border/60">
-                <CardContent className="p-4 space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">Question {index + 1}</div>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removeQuestion(index)} disabled={normalizedQuestions.length <= 1}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                <CardContent className="space-y-4 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">Question {index + 1}</div>
+                      {q.sourceQuestionId ? (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[11px] text-success">
+                          <Check className="h-3 w-3" /> From bank: {q.sourceExamTitle ?? "Question bank"}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => void openBankPicker(index)}>
+                        <BookOpen className="h-4 w-4 mr-1" /> Select from bank
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeQuestion(index)} disabled={normalizedQuestions.length <= 1}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
+
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2 md:col-span-2">
                       <Label>Question text</Label>
-                      <Textarea value={q.text} onChange={(e) => setQuestionAt(index, { text: e.target.value })} rows={3} placeholder="Enter the question prompt…" />
+                      <Textarea
+                        value={q.text}
+                        onChange={(e) => setQuestionAt(index, { text: e.target.value })}
+                        rows={3}
+                        placeholder="Enter the question prompt…"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Type</Label>
@@ -329,37 +381,6 @@ function CreateExamPage() {
                   )}
                 </CardContent>
               </Card>
-
-              {/* Bank modal */}
-              {bankOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-black/40" onClick={() => setBankOpen(false)} />
-                  <div className="bg-surface p-6 rounded-lg w-[80%] max-h-[80vh] overflow-y-auto z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium">Select questions from bank</h3>
-                      <div className="flex items-center gap-2">
-                        <Input placeholder="Search…" value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} />
-                        <Button variant="outline" onClick={() => setBankOpen(false)}>Close</Button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {(bankQuestions.filter((q) => !bankSearch || `${q.text} ${q.exam_title ?? ''} ${q.subject ?? ''}`.toLowerCase().includes(bankSearch.toLowerCase()))).map((q) => (
-                        <div key={q.id} className="flex items-start gap-3 p-3 border rounded hover:bg-muted">
-                          <input type="checkbox" checked={bankSelected.includes(q.id)} onChange={() => toggleBankSelect(q.id)} />
-                          <div className="flex-1">
-                            <div className="font-medium">{q.text}</div>
-                            <div className="text-xs text-muted-foreground mt-1">{q.question_type} • {q.exam_title ?? ''} • {q.subject ?? ''}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-end mt-4">
-                      <Button variant="outline" onClick={() => setBankOpen(false)}>Cancel</Button>
-                      <Button className="ml-2" onClick={addBankedToExam}>Add selected</Button>
-                    </div>
-                  </div>
-                </div>
-              )}
             ))}
           </CardContent>
         </Card>
@@ -374,13 +395,14 @@ function CreateExamPage() {
               "Disable copy / paste",
               "Randomize question order",
             ].map((s) => (
-              <div key={s} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
+              <div key={s} className="flex items-center justify-between border-b border-border/60 py-2 last:border-0">
                 <Label>{s}</Label>
                 <Switch defaultChecked />
               </div>
             ))}
           </CardContent>
         </Card>
+
         <Card className="border-border/60 mt-4">
           <CardContent className="flex items-center justify-between p-4">
             <div>
@@ -390,13 +412,167 @@ function CreateExamPage() {
             <Switch checked={publish} onCheckedChange={setPublish} />
           </CardContent>
         </Card>
-        <div className="flex gap-2 mt-4">
-          <Button type="submit" className="gradient-primary text-primary-foreground">{publish ? "Create & publish" : "Save draft"}</Button>
+
+        <div className="mt-4 flex gap-2">
+          <Button type="submit" className="gradient-primary text-primary-foreground">
+            {publish ? "Create & publish" : "Save draft"}
+          </Button>
           <Button type="button" variant="outline">Cancel</Button>
         </div>
       </form>
+
+      <Dialog open={bankOpen} onOpenChange={setBankOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Choose a reusable bank question</DialogTitle>
+            <DialogDescription>
+              Select a question for {bankTargetIndex !== null ? `Question ${bankTargetIndex + 1}` : "the exam"}. Questions are filtered by the exam subject.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search reusable questions…"
+                  value={bankSearch}
+                  onChange={(e) => setBankSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                {bankLoading ? (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Loading question bank…</div>
+                ) : filteredQuestions.length ? (
+                  filteredQuestions.map((q) => {
+                    const active = selectedBankId === q.id;
+                    return (
+                      <button
+                        type="button"
+                        key={q.id}
+                        onClick={() => setSelectedBankId(q.id)}
+                        className={`w-full rounded-xl border p-3 text-left transition ${active ? "border-primary bg-primary/5" : "border-border/60 hover:border-primary/40"}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 h-4 w-4 rounded-full border ${active ? "border-primary bg-primary" : "border-muted-foreground/30"}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="line-clamp-2 text-sm font-medium">{q.text}</div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                              <span className="rounded-full border px-2 py-0.5">{q.question_type ?? "mcq"}</span>
+                              <span className="rounded-full border px-2 py-0.5">{q.exam_title ?? "Exam"}</span>
+                              <span className="rounded-full border px-2 py-0.5">{q.subject ?? subject}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No reusable questions found for this subject.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-border/60 p-4">
+              {bankQuestions.find((q) => q.id === selectedBankId) ? (
+                (() => {
+                  const selected = bankQuestions.find((q) => q.id === selectedBankId);
+                  if (!selected) return null;
+                  return (
+                    <>
+                      <div className="space-y-2">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Preview</div>
+                        <div className="text-sm font-semibold">{selected.text}</div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div><span className="font-medium">Type:</span> {selected.question_type ?? "mcq"}</div>
+                        <div><span className="font-medium">Exam:</span> {selected.exam_title ?? "Exam"}</div>
+                        <div><span className="font-medium">Subject:</span> {selected.subject ?? subject}</div>
+                        <div><span className="font-medium">Marks:</span> {selected.marks ?? 1}</div>
+                      </div>
+
+                      {selected.question_type === "mcq" && (
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">Choices</div>
+                          <div className="space-y-2">
+                            {(selected.choices ?? []).map((choice: any, idx: number) => (
+                              <div key={idx} className={`rounded-md border p-2 text-sm ${choice.is_correct ? "border-success bg-success/5" : "border-border/60"}`}>
+                                {choice.text}{choice.is_correct ? " ✓" : ""}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium">Explanation</div>
+                            <p className="text-sm text-muted-foreground">{selected.explanation || "No explanation available."}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {selected.question_type === "description" && (
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium">Expected answer</div>
+                          <p className="text-sm text-muted-foreground">{selected.correct_answer_data?.text ?? "No reference answer stored."}</p>
+                        </div>
+                      )}
+
+                      {selected.question_type === "image" && (
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium">Expected image answer</div>
+                          {selected.correct_answer_data?.image ? (
+                            <img src={selected.correct_answer_data.image} alt="Bank answer preview" className="max-h-48 rounded-md border object-cover" />
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No image answer stored.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              ) : (
+                <div className="text-sm text-muted-foreground">Select a question from the list to preview it here.</div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBankOpen(false)}>Cancel</Button>
+            <Button onClick={applyBankQuestion} disabled={bankTargetIndex === null || !selectedBankId}>
+              Use selected question
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function filteredBankQuestions(bankQuestions: any[], search: string) {
+  const term = search.trim().toLowerCase();
+  if (!term) return bankQuestions;
+  return bankQuestions.filter((q) => `${q.text} ${q.exam_title ?? ""} ${q.subject ?? ""}`.toLowerCase().includes(term));
+}
+
+function mapBankQuestion(question: any): QuestionDraft {
+  return {
+    text: question.text ?? "",
+    question_type: question.question_type ?? "mcq",
+    marks: Number(question.marks ?? 1),
+    choices: Array.isArray(question.choices)
+      ? question.choices.map((choice: any) => ({ text: String(choice.text ?? ""), is_correct: Boolean(choice.is_correct) }))
+      : [],
+    correct_answer_data: question.question_type === "description"
+      ? { text: question.correct_answer_data?.text ?? "" }
+      : question.question_type === "image"
+        ? { image: question.correct_answer_data?.image ?? "" }
+        : {},
+    explanation: question.explanation ?? "",
+    sourceQuestionId: question.id,
+    sourceExamTitle: question.exam_title,
+    sourceSubject: question.subject,
+  };
 }
 
 function defaultQuestions(count: number): QuestionDraft[] {
@@ -413,6 +589,7 @@ function emptyQuestion(): QuestionDraft {
       { text: "", is_correct: false },
     ],
     correct_answer_data: {},
+    explanation: "",
   };
 }
 
@@ -423,4 +600,14 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function normalizeList(data: any, keys: string[]): any[] {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== "object") return [];
+  for (const key of keys) {
+    const value = data[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
 }
