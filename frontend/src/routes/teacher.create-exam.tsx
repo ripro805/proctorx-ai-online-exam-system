@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BookOpen, Check, Plus, Search, Trash2 } from "lucide-react";
 
@@ -47,6 +47,17 @@ function CreateExamPage() {
 
   const canAddMore = questions.length < questionCount;
   const normalizedQuestions = useMemo(() => questions.slice(0, questionCount), [questions, questionCount]);
+
+  useEffect(() => {
+    const now = new Date();
+    const localDate = now.toLocaleDateString("en-CA");
+    const rounded = new Date(now.getTime() + 5 * 60 * 1000);
+    rounded.setSeconds(0, 0);
+    const hh = String(rounded.getHours()).padStart(2, "0");
+    const mm = String(rounded.getMinutes()).padStart(2, "0");
+    setScheduleDate((prev) => prev || localDate);
+    setScheduleTime((prev) => prev || `${hh}:${mm}`);
+  }, []);
 
   const setQuestionAt = (index: number, patch: Partial<QuestionDraft>) => {
     setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)));
@@ -153,6 +164,63 @@ function CreateExamPage() {
 
   const filteredQuestions = filteredBankQuestions(bankQuestions, bankSearch);
 
+  const prepareQuestionsForSubmit = () => {
+    const valid: QuestionDraft[] = [];
+    for (const question of normalizedQuestions) {
+      const text = question.text.trim();
+      const type = question.question_type;
+
+      // Skip entirely empty placeholders from the default template.
+      const isEmptyQuestion = !text
+        && (type !== "mcq" || question.choices.every((c) => !c.text.trim()))
+        && !question.correct_answer_data.text?.trim()
+        && !question.correct_answer_data.image?.trim();
+      if (isEmptyQuestion) continue;
+
+      if (!text) {
+        toast.error("Each question needs a question text.");
+        return null;
+      }
+
+      if (type === "mcq") {
+        const choices = question.choices
+          .map((c) => ({ text: c.text.trim(), is_correct: c.is_correct }))
+          .filter((c) => c.text);
+        if (choices.length < 2) {
+          toast.error(`Question \"${text}\" needs at least 2 answer choices.`);
+          return null;
+        }
+        if (!choices.some((c) => c.is_correct)) {
+          toast.error(`Question \"${text}\" needs one correct answer.`);
+          return null;
+        }
+        valid.push({ ...question, text, choices });
+        continue;
+      }
+
+      if (type === "description" && !question.correct_answer_data.text?.trim()) {
+        toast.error(`Question \"${text}\" needs a reference answer.`);
+        return null;
+      }
+
+      if (type === "image" && !question.correct_answer_data.image?.trim()) {
+        toast.error(`Question \"${text}\" needs an image answer.`);
+        return null;
+      }
+
+      valid.push({
+        ...question,
+        text,
+        correct_answer_data: {
+          text: question.correct_answer_data.text?.trim(),
+          image: question.correct_answer_data.image,
+        },
+      });
+    }
+
+    return valid;
+  };
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -170,7 +238,10 @@ function CreateExamPage() {
           const duration = Number(form.get("duration") ?? 60);
           const date = String(form.get("schedule_date") ?? "");
           const time = String(form.get("schedule_time") ?? "");
-          const schedule = date && time ? new Date(`${date}T${time}:00`) : new Date();
+          const submittedQuestions = prepareQuestionsForSubmit();
+          if (!submittedQuestions) return;
+
+          const schedule = parseLocalDateTime(date, time);
           const end = new Date(schedule.getTime() + duration * 60000);
 
           try {
@@ -179,11 +250,11 @@ function CreateExamPage() {
               description,
               subject: subjectValue,
               duration_minutes: duration,
-              max_questions: questionCount,
+              max_questions: submittedQuestions.length,
               start_time: schedule.toISOString(),
               end_time: end.toISOString(),
               is_published: publish,
-              questions: normalizedQuestions.map((q) => ({
+              questions: submittedQuestions.map((q) => ({
                 text: q.text,
                 question_type: q.question_type,
                 marks: q.marks,
@@ -199,8 +270,11 @@ function CreateExamPage() {
               })),
             });
             toast.success(publish ? "Exam created and published!" : "Exam saved as draft.");
-          } catch {
-            toast.error("Failed to create exam");
+          } catch (err: any) {
+            const message = typeof err?.message === "string" && err.message.trim()
+              ? err.message
+              : "Failed to create exam";
+            toast.error(message);
           }
         }}
       >
@@ -615,4 +689,10 @@ function normalizeList(data: any, keys: string[]): any[] {
     if (Array.isArray(value)) return value;
   }
   return [];
+}
+
+function parseLocalDateTime(date: string, time: string) {
+  if (!date || !time) return new Date();
+  const candidate = new Date(`${date}T${time}:00`);
+  return Number.isNaN(candidate.getTime()) ? new Date() : candidate;
 }

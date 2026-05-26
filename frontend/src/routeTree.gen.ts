@@ -27,6 +27,7 @@ import { Route as TeacherMonitoringRouteImport } from './routes/teacher.monitori
 import { Route as TeacherManageExamsRouteImport } from './routes/teacher.manage-exams'
 import { Route as TeacherDashboardRouteImport } from './routes/teacher.dashboard'
 import { Route as TeacherCreateExamRouteImport } from './routes/teacher.create-exam'
+import { Route as TeacherAiAnalyticsRouteImport } from './routes/teacher.ai-analytics'
 import { Route as StudentStudyPlannerRouteImport } from './routes/student.study-planner'
 import { Route as StudentSettingsRouteImport } from './routes/student.settings'
 import { Route as StudentResultsRouteImport } from './routes/student.results'
@@ -140,6 +141,11 @@ const TeacherDashboardRoute = TeacherDashboardRouteImport.update({
 const TeacherCreateExamRoute = TeacherCreateExamRouteImport.update({
   id: '/create-exam',
   path: '/create-exam',
+  getParentRoute: () => TeacherRoute,
+} as any)
+const TeacherAiAnalyticsRoute = TeacherAiAnalyticsRouteImport.update({
+  id: '/ai-analytics',
+  path: '/ai-analytics',
   getParentRoute: () => TeacherRoute,
 } as any)
 const StudentStudyPlannerRoute = StudentStudyPlannerRouteImport.update({
@@ -299,6 +305,7 @@ export interface FileRoutesByFullPath {
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
   '/student/study-planner': typeof StudentStudyPlannerRoute
+  '/teacher/ai-analytics': typeof TeacherAiAnalyticsRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -339,6 +346,7 @@ export interface FileRoutesByTo {
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
   '/student/study-planner': typeof StudentStudyPlannerRoute
+  '/teacher/ai-analytics': typeof TeacherAiAnalyticsRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -385,6 +393,7 @@ export interface FileRoutesById {
   '/student/results': typeof StudentResultsRoute
   '/student/settings': typeof StudentSettingsRoute
   '/student/study-planner': typeof StudentStudyPlannerRoute
+  '/teacher/ai-analytics': typeof TeacherAiAnalyticsRoute
   '/teacher/create-exam': typeof TeacherCreateExamRoute
   '/teacher/dashboard': typeof TeacherDashboardRoute
   '/teacher/manage-exams': typeof TeacherManageExamsRoute
@@ -432,6 +441,7 @@ export interface FileRouteTypes {
     | '/student/results'
     | '/student/settings'
     | '/student/study-planner'
+    | '/teacher/ai-analytics'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/student/results'
     | '/student/settings'
     | '/student/study-planner'
+    | '/teacher/ai-analytics'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/student/results'
     | '/student/settings'
     | '/student/study-planner'
+    | '/teacher/ai-analytics'
     | '/teacher/create-exam'
     | '/teacher/dashboard'
     | '/teacher/manage-exams'
@@ -667,6 +679,13 @@ declare module '@tanstack/react-router' {
       path: '/create-exam'
       fullPath: '/teacher/create-exam'
       preLoaderRoute: typeof TeacherCreateExamRouteImport
+      parentRoute: typeof TeacherRoute
+    }
+    '/teacher/ai-analytics': {
+      id: '/teacher/ai-analytics'
+      path: '/ai-analytics'
+      fullPath: '/teacher/ai-analytics'
+      preLoaderRoute: typeof TeacherAiAnalyticsRouteImport
       parentRoute: typeof TeacherRoute
     }
     '/student/study-planner': {
@@ -930,6 +949,7 @@ const StudentRouteWithChildren =
   StudentRoute._addFileChildren(StudentRouteChildren)
 
 interface TeacherRouteChildren {
+  TeacherAiAnalyticsRoute: typeof TeacherAiAnalyticsRoute
   TeacherCreateExamRoute: typeof TeacherCreateExamRoute
   TeacherDashboardRoute: typeof TeacherDashboardRoute
   TeacherManageExamsRoute: typeof TeacherManageExamsRoute
@@ -942,6 +962,7 @@ interface TeacherRouteChildren {
 }
 
 const TeacherRouteChildren: TeacherRouteChildren = {
+  TeacherAiAnalyticsRoute: TeacherAiAnalyticsRoute,
   TeacherCreateExamRoute: TeacherCreateExamRoute,
   TeacherDashboardRoute: TeacherDashboardRoute,
   TeacherManageExamsRoute: TeacherManageExamsRoute,

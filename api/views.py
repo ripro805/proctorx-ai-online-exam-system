@@ -14,6 +14,7 @@ from core.serializers import SystemSettingSerializer
 from exams.models import Exam
 from exams.models import ExamProgress
 from proctoring.models import ProctorLog, StudentExamSession
+from ai_tutor.utils import has_active_exam_session
 from results.models import Result
 from results.serializers import ResultSerializer
 
@@ -156,7 +157,7 @@ class StudentExamsAPIView(APIView):
 			if not can_student_access_exam(request.user, exam):
 				continue
 			data.append(_exam_card_payload(exam, now, score=scores.get(exam.id)))
-		return Response({'exams': data}, status=status.HTTP_200_OK)
+		return Response({'exams': data, 'has_active_session': has_active_exam_session(request.user)}, status=status.HTTP_200_OK)
 
 
 class StudentNotificationsAPIView(APIView):

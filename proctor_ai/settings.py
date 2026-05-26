@@ -48,7 +48,15 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else []
+_default_dev_hosts = ['localhost', '127.0.0.1', '[::1]', 'testserver', '0.0.0.0']
+if os.environ.get('DJANGO_ALLOWED_HOSTS'):
+    configured_hosts = [host.strip() for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
+    ALLOWED_HOSTS = list(dict.fromkeys(configured_hosts + (_default_dev_hosts if DEBUG else [])))
+elif DEBUG:
+    # Safe defaults for local development / tunnel testing.
+    ALLOWED_HOSTS = ['*']
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 
 
 # Application definition

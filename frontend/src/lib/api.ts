@@ -89,11 +89,21 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     if (refreshed) {
       headers.set("Authorization", `Bearer ${refreshed}`);
       const retry = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-      if (!retry.ok) throw new Error(await retry.text());
+      if (!retry.ok) {
+        const text = await retry.text();
+        const err: any = new Error(text || `Request failed: ${retry.status}`);
+        err.status = retry.status;
+        throw err;
+      }
       return retry.json();
     }
   }
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    const err: any = new Error(text || `Request failed: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -185,6 +195,10 @@ export async function getTeacherStudents() {
 
 export async function getTeacherResults() {
   return apiFetch("/teacher/results/");
+}
+
+export async function getTeacherAiAnalytics() {
+  return apiFetch('/ai/teacher-analytics/');
 }
 
 export async function getTeacherReports() {
@@ -319,18 +333,36 @@ export async function getAiStudyPlans() {
   return apiFetch("/ai/study-plan/");
 }
 
-export async function generateAiStudyPlan(payload: { subject: string; examId?: string }) {
+export async function generateAiStudyPlan(payload: {
+  subject: string;
+  examId?: string;
+  studyHoursPerDay?: number;
+  difficultyLevel?: string;
+  learningPace?: string;
+  completedTopics?: string;
+}) {
   return apiFetch("/ai/study-plan/", {
     method: "POST",
-    body: JSON.stringify({ subject: payload.subject, exam_id: payload.examId }),
+    body: JSON.stringify({
+      subject: payload.subject,
+      exam_id: payload.examId,
+      study_hours_per_day: payload.studyHoursPerDay,
+      difficulty_level: payload.difficultyLevel,
+      learning_pace: payload.learningPace,
+      completed_topics: payload.completedTopics,
+    }),
   });
 }
 
 export async function generateAiQuiz(payload: { topic: string; difficulty: string; count: number }) {
   return apiFetch("/ai/generate-quiz/", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ topic: payload.topic, difficulty: payload.difficulty, question_count: payload.count }),
   });
+}
+
+export async function submitAiQuiz(payload: { quiz_id: number | string; answers: Record<string, string> }) {
+  return apiFetch('/ai/submit-quiz/', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function getAiPerformanceAnalysis() {

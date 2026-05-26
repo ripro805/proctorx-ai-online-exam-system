@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LiveAlertsFeed } from "@/components/proctoring/live-alerts-feed";
-import { getTeacherSummary } from "@/lib/api";
+import { getTeacherSummary, getTeacherAiAnalytics } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { FileText, Activity, Users, ShieldAlert } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, AreaChart, Area } from "recharts";
@@ -13,16 +13,37 @@ function TeacherDashboard() {
   const [stats, setStats] = useState<any>({});
   const [violations, setViolations] = useState<any[]>([]);
   const [trend, setTrend] = useState<any[]>([]);
+  const [aiAnalytics, setAiAnalytics] = useState<any>(null);
   useEffect(() => {
-    getTeacherSummary().then((data) => {
-      setStats(data ?? {});
-      setViolations(data.violation_data ?? []);
-      setTrend(data.performance_trend ?? []);
-    }).catch(() => {
-      setStats({});
-      setViolations([]);
-      setTrend([]);
-    });
+    (async () => {
+      try {
+        const data = await getTeacherSummary();
+        setStats(data ?? {});
+        setViolations(data.violation_data ?? []);
+        setTrend(data.performance_trend ?? []);
+      } catch (err: any) {
+        // show a clearer error when access is denied
+        if (err?.status === 403) {
+          // redirect to login for re-auth or inform the user
+          // keep UX friendly: show empty and a toast
+          // we can't import toast here without adding it, but keep minimal: set empty state
+          setStats({});
+          setViolations([]);
+          setTrend([]);
+          setAiAnalytics(null);
+          return;
+        }
+        setStats({});
+        setViolations([]);
+        setTrend([]);
+      }
+      try {
+        const data = await getTeacherAiAnalytics();
+        setAiAnalytics(data);
+      } catch {
+        setAiAnalytics(null);
+      }
+    })();
   }, []);
   return (
     <div className="space-y-6">
@@ -35,6 +56,40 @@ function TeacherDashboard() {
         <StatCard title="Active Exams" value={stats.active_exams ?? 0} icon={Activity} accent="warning" trend="In progress" />
         <StatCard title="Students" value={(stats.students ?? 0).toLocaleString?.() ?? stats.students ?? 0} icon={Users} accent="success" trend="Enrolled" />
         <StatCard title="Violations" value={stats.violations ?? 0} icon={ShieldAlert} accent="destructive" trend="Last 7 days" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-border/60">
+          <CardHeader><CardTitle>AI conversations</CardTitle></CardHeader>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            <div className="text-lg font-medium">{aiAnalytics?.total_conversations ?? 0}</div>
+            <div className="text-xs">Conversations (all time)</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60">
+          <CardHeader><CardTitle>Messages</CardTitle></CardHeader>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            <div className="text-lg font-medium">{aiAnalytics?.total_messages ?? 0}</div>
+            <div className="text-xs">Total messages</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60">
+          <CardHeader><CardTitle>Avg msg / convo</CardTitle></CardHeader>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            <div className="text-lg font-medium">{aiAnalytics?.avg_messages_per_conversation ?? 0}</div>
+            <div className="text-xs">Average messages per conversation</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60">
+          <CardHeader><CardTitle>Recent AI activity</CardTitle></CardHeader>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            <div className="space-y-2">
+              {(aiAnalytics?.recent_activity ?? []).slice(0,3).map((r:any)=> (
+                <div key={r.id} className="text-xs">{r.student__name}: {r.title || r.subject || 'chat'}</div>
+              ))}
+              {(aiAnalytics?.recent_activity ?? []).length===0 && <div className="text-xs text-muted-foreground">No AI activity yet.</div>}
+            </div>
+          </CardContent>
+        </Card>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-border/60">

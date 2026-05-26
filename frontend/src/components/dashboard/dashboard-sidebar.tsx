@@ -3,8 +3,10 @@ import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
-import { ShieldCheck, LogOut, type LucideIcon } from "lucide-react";
+import { ShieldCheck, LogOut, type LucideIcon, Lock } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { useEffect, useState } from "react";
+import { getStudentExams } from "@/lib/api";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 
@@ -14,8 +16,23 @@ export function DashboardSidebar({ items, label }: { items: NavItem[]; label: st
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.role !== 'student') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getStudentExams();
+        if (!cancelled) setHasActiveSession(Boolean(data.has_active_session));
+      } catch {
+        if (!cancelled) setHasActiveSession(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
   return (
     <Sidebar collapsible="icon">
@@ -39,13 +56,23 @@ export function DashboardSidebar({ items, label }: { items: NavItem[]; label: st
             <SidebarMenu>
               {items.map((item) => {
                 const active = pathname === item.url;
+                // disable AI-related items during an active exam session for students
+                const isAiItem = ['/student/ai-tutor', '/student/study-planner', '/student/ai-quiz'].includes(item.url);
+                const disabled = Boolean(user && user.role === 'student' && hasActiveSession && isAiItem);
                 return (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={active}>
-                      <Link to={item.url} className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4" />
-                        {!collapsed && <span>{item.title}</span>}
-                      </Link>
+                      {disabled ? (
+                        <div className="flex items-center gap-3 opacity-60 cursor-not-allowed">
+                          <item.icon className="h-4 w-4" />
+                          {!collapsed && <span className="flex items-center gap-2">{item.title} <Lock className="h-3 w-3 text-muted-foreground" /></span>}
+                        </div>
+                      ) : (
+                        <Link to={item.url} className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4" />
+                          {!collapsed && <span>{item.title}</span>}
+                        </Link>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

@@ -18,7 +18,7 @@ export function DashboardNavbar() {
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
-  const initials = user?.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() ?? "U";
+  const initials = user?.name?.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() ?? "U";
   const [notes, setNotes] = useState<Array<{ id: string; text: string; time: string }>>([]);
 
   useEffect(() => {
