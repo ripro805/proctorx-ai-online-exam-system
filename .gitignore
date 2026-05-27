@@ -24,6 +24,7 @@ env/
 
 # Django / project
 db.sqlite3
+data.json
 *.sqlite3
 .pytest_cache/
 .mypy_cache/
