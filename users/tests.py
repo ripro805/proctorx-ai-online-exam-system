@@ -37,3 +37,14 @@ class UserProfileUpdateTests(TestCase):
 		self.assertEqual(self.user.email, 'newstudent@example.com')
 		self.assertEqual(self.user.phone_number, '01811112222')
 		self.assertTrue(self.user.check_password('new-pass-123'))
+
+	def test_public_password_reset_changes_password(self):
+		res = self.client.post('/api/auth/password-reset/', {
+			'email': 'student@example.com',
+			'password': 'reset-pass-123',
+			'confirm_password': 'reset-pass-123',
+		}, format='json')
+
+		self.assertEqual(res.status_code, 200)
+		self.user.refresh_from_db()
+		self.assertTrue(self.user.check_password('reset-pass-123'))

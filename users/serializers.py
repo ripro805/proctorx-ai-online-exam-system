@@ -73,6 +73,27 @@ class UserRoleUpdateSerializer(serializers.ModelSerializer):
         fields = ('role',)
 
 
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
+        return attrs
+
+    def save(self, **kwargs):
+        email = self.validated_data['email']
+        password = self.validated_data['password']
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            raise serializers.ValidationError({'email': 'No account found with this email.'})
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        return user
+
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):

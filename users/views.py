@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from core.permissions import IsAdmin
 from users.serializers import (
 	CustomTokenObtainPairSerializer,
+	PasswordResetSerializer,
 	UserProfileSerializer,
 	UserProfileUpdateSerializer,
 	UserRegisterSerializer,
@@ -31,6 +32,16 @@ class RegisterAPIView(APIView):
 class LoginAPIView(TokenObtainPairView):
 	permission_classes = [permissions.AllowAny]
 	serializer_class = CustomTokenObtainPairSerializer
+
+
+class PasswordResetAPIView(APIView):
+	permission_classes = [permissions.AllowAny]
+
+	def post(self, request):
+		serializer = PasswordResetSerializer(data=request.data)
+		serializer.is_valid(raise_exception=True)
+		serializer.save()
+		return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
 
 
 class ProfileAPIView(APIView):

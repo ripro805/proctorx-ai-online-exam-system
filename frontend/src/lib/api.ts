@@ -129,6 +129,17 @@ export async function login(email: string, password: string) {
   return user;
 }
 
+export async function resetPassword(payload: { email: string; password: string; confirmPassword: string }) {
+  return apiFetch("/auth/password-reset/", {
+    method: "POST",
+    body: JSON.stringify({
+      email: payload.email,
+      password: payload.password,
+      confirm_password: payload.confirmPassword,
+    }),
+  });
+}
+
 export async function register(name: string, email: string, password: string) {
   await fetch(`${API_BASE_URL}/auth/register/`, {
     method: "POST",
