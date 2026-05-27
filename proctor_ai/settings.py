@@ -128,7 +128,7 @@ ASGI_APPLICATION = 'proctor_ai.asgi.application'
 DATABASE_URL = config('DATABASE_URL', default='')
 DB_CONN_MAX_AGE = config('DB_CONN_MAX_AGE', default=600, cast=int)
 
-if (DJANGO_ENV == 'production' or USE_NEON_DATABASE) and DATABASE_URL:
+if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.config(
             default=DATABASE_URL,
