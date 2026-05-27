@@ -92,6 +92,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -183,9 +184,13 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+WHITENOISE_AUTOREFRESH = DEBUG
+WHITENOISE_USE_FINDERS = DEBUG
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -195,6 +200,20 @@ cors_env = os.environ.get('CORS_ALLOWED_ORIGINS') or os.environ.get('CORS_ALLOWE
 CORS_ALLOWED_ORIGINS = (
     [origin.strip() for origin in cors_env.split(',') if origin.strip()]
     if cors_env
+    else [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:8080',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:8080',
+    ]
+)
+
+csrf_env = os.environ.get('CSRF_TRUSTED_ORIGINS') or os.environ.get('CSRF_TRUSTED_ORIGIN', '')
+CSRF_TRUSTED_ORIGINS = (
+    [origin.strip() for origin in csrf_env.split(',') if origin.strip()]
+    if csrf_env
     else [
         'http://localhost:3000',
         'http://localhost:5173',

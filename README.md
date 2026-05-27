@@ -26,3 +26,7 @@ Full-stack AI proctoring platform with Django/DRF backend and Vite frontend.
 
 ## Docs
 - API reference: `docs/api.md`
+- Deployment guide: `docs/deployment-render-vercel.md`
+- Render blueprint: `render.yaml`
+- Vercel config: `frontend/vercel.json`
+- Local env template: `.env.example`
