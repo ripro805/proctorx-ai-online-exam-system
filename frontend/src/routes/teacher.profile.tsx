@@ -47,11 +47,7 @@ function ProfilePage() {
               institution: form.get("institution"),
               student_id: form.get("teacher_id"), // backend stores id in student_id field
             };
-            const password = String(form.get("password") ?? "").trim();
-            if (password) payload.password = password;
-            updateProfile({
-              ...payload,
-            }).then((data) => {
+            updateProfile(payload).then((data) => {
               setProfile(data);
               updateUser({
                 name: data.name,
@@ -66,8 +62,32 @@ function ProfilePage() {
             <div className="space-y-2"><Label>Phone number</Label><Input name="phone_number" defaultValue={profile?.phone_number ?? ""} type="tel" placeholder="01XXXXXXXXX" /></div>
             <div className="space-y-2"><Label>Institution</Label><Input name="institution" defaultValue={profile?.institution ?? ""} /></div>
             <div className="space-y-2"><Label>Teacher ID</Label><Input name="teacher_id" defaultValue={profile?.student_id ?? ""} /></div>
-            <div className="space-y-2"><Label>New password</Label><Input name="password" type="password" placeholder="Leave blank to keep current password" /></div>
             <div className="md:col-span-2"><Button type="submit" className="gradient-primary text-primary-foreground">Save changes</Button></div>
+          </form>
+        </CardContent>
+      </Card>
+      <Card className="border-border/60">
+        <CardHeader><CardTitle>Change password</CardTitle></CardHeader>
+        <CardContent>
+          <form className="grid md:grid-cols-2 gap-4" onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            updateProfile({
+              current_password: form.get("current_password"),
+              new_password: form.get("new_password"),
+              confirm_new_password: form.get("confirm_new_password"),
+            }).then(() => {
+              toast.success("Password updated");
+              e.currentTarget.reset();
+            }).catch((err: any) => {
+              const message = typeof err?.message === "string" && err.message.trim() ? err.message : "Failed to change password";
+              toast.error(message);
+            });
+          }}>
+            <div className="space-y-2"><Label>Current password</Label><Input name="current_password" type="password" placeholder="Enter current password" /></div>
+            <div className="space-y-2"><Label>New password</Label><Input name="new_password" type="password" placeholder="Enter new password" /></div>
+            <div className="space-y-2"><Label>Confirm new password</Label><Input name="confirm_new_password" type="password" placeholder="Repeat new password" /></div>
+            <div className="md:col-span-2"><Button type="submit">Change password</Button></div>
           </form>
         </CardContent>
       </Card>

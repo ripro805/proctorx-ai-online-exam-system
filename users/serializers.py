@@ -47,22 +47,52 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    new_password = serializers.CharField(write_only=True, required=False, allow_blank=True, min_length=8)
+    confirm_new_password = serializers.CharField(write_only=True, required=False, allow_blank=True, min_length=8)
 
     class Meta:
         model = User
-        fields = ('email', 'username', 'name', 'phone_number', 'institution', 'student_id', 'preferences', 'password')
+        fields = (
+            'email',
+            'username',
+            'name',
+            'phone_number',
+            'institution',
+            'student_id',
+            'preferences',
+            'current_password',
+            'new_password',
+            'confirm_new_password',
+        )
+
+    def validate(self, attrs):
+        new_password = attrs.get('new_password')
+        confirm_new_password = attrs.get('confirm_new_password')
+        current_password = attrs.get('current_password')
+
+        password_fields = [current_password, new_password, confirm_new_password]
+        if any(value for value in password_fields):
+            if not all(password_fields):
+                raise serializers.ValidationError({'detail': 'Current password, new password, and confirm new password are required.'})
+            if new_password != confirm_new_password:
+                raise serializers.ValidationError({'confirm_new_password': 'Passwords do not match.'})
+        return attrs
 
     def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
+        current_password = validated_data.pop('current_password', None)
+        new_password = validated_data.pop('new_password', None)
+        validated_data.pop('confirm_new_password', None)
         name = validated_data.pop('name', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if name is not None:
             instance.full_name = name
-        if password:
-            instance.set_password(password)
+        if new_password:
+            if not current_password or not instance.check_password(current_password):
+                raise serializers.ValidationError({'current_password': 'Current password is incorrect.'})
+            instance.set_password(new_password)
         instance.save()
         return instance
 

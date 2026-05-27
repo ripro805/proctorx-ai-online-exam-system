@@ -23,7 +23,9 @@ class UserProfileUpdateTests(TestCase):
 			'name': 'New Name',
 			'email': 'newstudent@example.com',
 			'phone_number': '01811112222',
-			'password': 'new-pass-123',
+			'current_password': 'old-pass-123',
+			'new_password': 'new-pass-123',
+			'confirm_new_password': 'new-pass-123',
 		}, format='json')
 
 		self.assertEqual(res.status_code, 200)
@@ -37,6 +39,17 @@ class UserProfileUpdateTests(TestCase):
 		self.assertEqual(self.user.email, 'newstudent@example.com')
 		self.assertEqual(self.user.phone_number, '01811112222')
 		self.assertTrue(self.user.check_password('new-pass-123'))
+
+	def test_profile_patch_rejects_wrong_current_password(self):
+		self.client.force_authenticate(user=self.user)
+		res = self.client.patch('/api/auth/profile/', {
+			'current_password': 'wrong-pass',
+			'new_password': 'new-pass-123',
+			'confirm_new_password': 'new-pass-123',
+		}, format='json')
+
+		self.assertEqual(res.status_code, 400)
+		self.assertIn('current_password', res.json())
 
 	def test_public_password_reset_changes_password(self):
 		res = self.client.post('/api/auth/password-reset/', {
