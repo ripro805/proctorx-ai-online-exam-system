@@ -14,6 +14,7 @@ from exams.serializers import (
 	StudentExamSerializer,
 )
 from results.models import Result
+from ai_tutor.services.answer_grader import grade_subjective_answer
 
 
 class ExamViewSet(viewsets.ModelViewSet):
@@ -115,8 +116,10 @@ class ExamSubmitAPIView(APIView):
 			return Response({'detail': 'Exam already submitted'}, status=status.HTTP_400_BAD_REQUEST)
 
 		with transaction.atomic():
-			correct = 0
+			correct_questions = 0
+			earned_marks = 0.0
 			total = exam.questions.count()
+			total_marks = sum(q.marks for q in exam.questions.all()) or 1
 
 			for item in answers:
 				question_id = item.get('question_id')
@@ -127,25 +130,35 @@ class ExamSubmitAPIView(APIView):
 				choice = None
 				is_correct = None
 				answer_data = {}
-				if question.question_type == QuestionType.MCQ:
+				score_awarded = 0.0
+				question_type = question.question_type
+				exam_subject = exam.subject or ''
+				answer_payload = item.get('answer_data') if isinstance(item.get('answer_data'), dict) else item
+
+				if question_type == QuestionType.MCQ:
 					choice_id = item.get('choice_id')
 					choice = Choice.objects.filter(id=choice_id, question=question).first()
 					if not choice:
 						continue
 					is_correct = choice.is_correct
+					score_awarded = float(question.marks if is_correct else 0)
 					answer_data = {'choice_id': choice.id, 'choice_text': choice.text}
-				elif question.question_type == QuestionType.DESCRIPTION:
-					text = item.get('answer_text') or item.get('text') or ''
+
+				elif question_type == QuestionType.DESCRIPTION:
+					text = item.get('answer_text') or item.get('text') or answer_payload.get('answer_text') or answer_payload.get('text') or ''
 					answer_data = {'text': text}
-					correct_text = str((question.correct_answer_data or {}).get('text', '')).strip().lower()
-					if correct_text:
-						is_correct = str(text).strip().lower() == correct_text
-				elif question.question_type == QuestionType.IMAGE:
-					image = item.get('answer_image') or item.get('image') or ''
+					grading = grade_subjective_answer(question, {'text': text}, exam_subject)
+					is_correct = bool(grading.get('is_correct'))
+					score_awarded = float(grading.get('score_awarded') or 0)
+					answer_data['grading'] = grading
+
+				elif question_type == QuestionType.IMAGE:
+					image = item.get('answer_image') or item.get('image') or answer_payload.get('answer_image') or answer_payload.get('image') or ''
 					answer_data = {'image': image}
-					correct_image = str((question.correct_answer_data or {}).get('image', '')).strip()
-					if correct_image and image:
-						is_correct = image == correct_image
+					grading = grade_subjective_answer(question, {'image': image}, exam_subject)
+					is_correct = bool(grading.get('is_correct'))
+					score_awarded = float(grading.get('score_awarded') or 0)
+					answer_data['grading'] = grading
 
 				StudentAnswer.objects.update_or_create(
 					student=request.user,
@@ -153,18 +166,18 @@ class ExamSubmitAPIView(APIView):
 					question=question,
 					defaults={'choice': choice, 'answer_data': answer_data, 'is_correct': is_correct},
 				)
+				earned_marks += score_awarded
 				if is_correct:
-					correct += question.marks
+					correct_questions += 1
 
-			total_marks = sum(q.marks for q in exam.questions.all()) or 1
-			percentage = (correct / total_marks) * 100
+			percentage = (earned_marks / total_marks) * 100
 
 			result = Result.objects.create(
 				student=request.user,
 				exam=exam,
 				total_questions=total,
-				correct_answers=correct,
-				score=correct,
+				correct_answers=correct_questions,
+				score=earned_marks,
 				percentage=percentage,
 			)
 
@@ -180,4 +193,4 @@ class ExamSubmitAPIView(APIView):
 			defaults={'status': 'completed', 'ended_at': now},
 		)
 
-		return Response({'result_id': result.id, 'score': correct, 'percentage': percentage})
+		return Response({'result_id': result.id, 'score': earned_marks, 'percentage': percentage}, status=status.HTTP_200_OK)
