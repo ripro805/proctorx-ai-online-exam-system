@@ -8,12 +8,19 @@ from django.contrib.auth import get_user_model
 from exams.models import Exam, Question, Choice, ExamEnrollment
 from results.models import Result
 from proctoring.models import ProctorLog, StudentExamSession
+from ai_tutor.models import AIConversation, AIStudyPlan
 
 User = get_user_model()
 
 
 class Command(BaseCommand):
     help = 'Seed demo users, exams, questions, results, and proctoring logs'
+    
+    def add_arguments(self, parser):
+        parser.add_argument('--admin-email', dest='admin_email', default='admin@proctorxai.com', help='Admin email to use or create')
+        parser.add_argument('--teacher-email', dest='teacher_email', default='teacher@demo.com', help='Teacher email to use or create')
+        parser.add_argument('--student-emails', dest='student_emails', default='', help='Comma separated student emails to use/create. If empty, demo students are used')
+        parser.add_argument('--dry-run', action='store_true', dest='dry_run', help='Print actions without applying changes')
 
     QUESTION_BANK = {
         'Data Structures': [
@@ -261,44 +268,77 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         now = timezone.now()
 
-        def ensure_user(email: str, username: str, role: str, full_name: str):
+        def ensure_user(email: str, username: str, role: str, full_name: str, dry_run_flag: bool = False, force_full_name: bool = False):
+            """Find or create a user. Does not overwrite existing user's password.
+
+            If dry_run_flag is True, no writes are performed; function will return existing user if found or None.
+            """
             user = User.objects.filter(email=email).first() or User.objects.filter(username=username).first()
             if not user:
+                if dry_run_flag:
+                    self.stdout.write(self.style.WARNING(f'[DRY] Would create user {email} (role={role})'))
+                    return None
                 user = User.objects.create_user(email=email, username=username, role=role, full_name=full_name, password='demo1234')
-            else:
-                updated = False
-                if user.email != email:
-                    user.email = email
-                    updated = True
-                if not user.username:
-                    user.username = username
-                    updated = True
-                if not user.full_name:
-                    user.full_name = full_name
-                    updated = True
-                if user.role != role:
-                    user.role = role
-                    updated = True
-                if not user.is_active:
-                    user.is_active = True
-                    updated = True
-                user.set_password('demo1234')
+                return user
+            # existing user: update non-sensitive fields only
+            updated = False
+            if user.email != email:
+                user.email = email
                 updated = True
-                if updated:
-                    user.save()
+            if not user.username:
+                user.username = username
+                updated = True
+            if force_full_name or not user.full_name:
+                user.full_name = full_name
+                updated = True
+            if user.role != role:
+                user.role = role
+                updated = True
+            if not user.is_active:
+                user.is_active = True
+                updated = True
+            # Do NOT change existing user's password
+            if updated and not dry_run_flag:
+                user.save()
+            elif updated and dry_run_flag:
+                self.stdout.write(self.style.WARNING(f'[DRY] Would update user {email}: set username/full_name/role/is_active'))
             return user
 
-        admin = ensure_user('admin@demo.com', 'admin', 'admin', 'Admin User')
+        admin_email = options.get('admin_email')
+        teacher_email = options.get('teacher_email')
+        student_emails_opt = options.get('student_emails')
+        dry_run = options.get('dry_run')
+
+        # Prepare student email list
+        if student_emails_opt:
+            student_emails = [e.strip() for e in student_emails_opt.split(',') if e.strip()]
+        else:
+            student_emails = [f'student{idx+1}@demo.com' for idx in range(6)]
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING('DRY RUN: No changes will be made.'))
+
+        admin = ensure_user(admin_email, 'admin', 'admin', 'Admin User', dry_run_flag=dry_run)
         admin.is_staff = True
         admin.is_superuser = True
         admin.save()
 
-        teacher = ensure_user('teacher@demo.com', 'teacher', 'teacher', 'Dr. Sarah Kim')
+        teacher = ensure_user(teacher_email, 'teacher', 'teacher', 'Dr. Sarah Kim', dry_run_flag=dry_run)
 
+        demo_names = ['Rifatriz', 'Maria Garcia', 'James Chen', 'Priya Patel', 'Omar Hassan', 'Sofia Rossi']
         students = []
-        for idx, name in enumerate(['Alex Johnson', 'Maria Garcia', 'James Chen', 'Priya Patel', 'Omar Hassan', 'Sofia Rossi']):
-            email = f'student{idx+1}@demo.com'
-            user = ensure_user(email, f'student{idx+1}', 'student', name)
+        for idx, email in enumerate(student_emails):
+            name = demo_names[idx] if idx < len(demo_names) else f'Demo Student {idx+1}'
+            username = email.split('@')[0]
+            user = ensure_user(email, username, 'student', name, dry_run_flag=dry_run, force_full_name=True)
+            if user is None and dry_run:
+                # in dry-run mode, return a lightweight placeholder object with email only
+                class _P: pass
+                p = _P()
+                p.email = email
+                p.id = '(dry-run)'
+                students.append(p)
+                continue
             students.append(user)
 
         exams = []
@@ -334,6 +374,7 @@ class Command(BaseCommand):
             exams.append(exam)
 
         for exam in exams:
+            # Replace questions in exam with canonical bank (idempotent)
             exam.questions.all().delete()
             for idx, item in enumerate(self.QUESTION_BANK.get(exam.subject, []), start=1):
                 q = Question.objects.create(
@@ -369,8 +410,16 @@ class Command(BaseCommand):
                 result.percentage = round((result.correct_answers / total) * 100, 2)
                 result.save()
 
+        # Ensure AI placeholders (conversations and study plans) exist for students
+        for student in students:
+            try:
+                AIConversation.objects.get_or_create(student=student, title='Seeded AI Conversation')
+                AIStudyPlan.objects.get_or_create(student=student, subject='General')
+            except Exception:
+                pass
+
         # Seed proctor logs for ongoing exam
-        ongoing_exam = exams[1]
+        ongoing_exam = exams[1] if len(exams) > 1 else (exams[0] if exams else None)
         for student in students[:3]:
             StudentExamSession.objects.update_or_create(
                 student=student,
@@ -385,4 +434,15 @@ class Command(BaseCommand):
                     message='Tab switch detected',
                 )
 
-        self.stdout.write(self.style.SUCCESS('Seeded demo data (admin/teacher/student accounts, exams, questions, results).'))
+        summary = [
+            f'Admin account: {admin.email} (id={admin.id})',
+            f'Teacher account: {teacher.email} (id={teacher.id})',
+            f'Students: {", ".join([s.email for s in students])}',
+            f'Exams seeded: {len(exams)}',
+        ]
+        for line in summary:
+            self.stdout.write(line)
+        if dry_run:
+            self.stdout.write(self.style.WARNING('Dry run complete — no changes were persisted (note: ensure --dry-run halts before writes in production).'))
+        else:
+            self.stdout.write(self.style.SUCCESS('Seeded demo data (admin/teacher/student accounts, exams, questions, results).'))

@@ -22,9 +22,15 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   const demoEmails: Record<Role, string> = {
-    student: "student1@demo.com",
+    student: "rifatrizviofficial001@gmail.com",
     teacher: "teacher@demo.com",
-    admin: "admin@demo.com",
+    admin: "admin@proctorxai.com",
+  };
+
+  const demoPasswords: Record<Role, string> = {
+    student: "Ripro@123",
+    teacher: "Prova@123",
+    admin: "admin123",
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -84,7 +90,7 @@ function LoginPage() {
                       setLoading(true);
                       try {
                         await logout();
-                        const u = await login(demoEmails[r], "demo1234");
+                        const u = await login(demoEmails[r], demoPasswords[r]);
                         toast.success(`Logged in as ${u.name}`);
                         navigate({ to: dashboardPathFor(r) as any });
                       } catch (err) {
