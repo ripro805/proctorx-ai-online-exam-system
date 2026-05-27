@@ -56,15 +56,14 @@ If you use email or AI features in production, also set:
 
 ### Render runtime details
 
-- **Build command**: installs Python deps and collects static files
-- **Pre-deploy command**: runs migrations
+- **Build command**: runs `scripts/build.sh` (installs deps, migrates, collects static files)
 - **Start command**: launches `daphne` against `proctor_ai.asgi:application`
 
 That start command is important because this app uses Channels/WebSockets.
 
 ### After the first deploy
 
-1. Open the service logs and confirm migrations completed.
+1. Open the service logs and confirm the build script completed.
 2. Visit `https://proctorx-ai-api.onrender.com/admin/login/`.
 3. Create/load your admin account if needed.
 4. Verify the API is reachable from your browser and that WebSocket connections are accepted.

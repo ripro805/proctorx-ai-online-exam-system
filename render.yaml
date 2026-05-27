@@ -3,8 +3,7 @@ services:
     name: proctorx-ai-api
     env: python
     plan: starter
-    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput --clear
-    preDeployCommand: python manage.py migrate --noinput
+    buildCommand: bash ./scripts/build.sh
     startCommand: daphne -b 0.0.0.0 -p $PORT proctor_ai.asgi:application
     healthCheckPath: /admin/login/
     autoDeploy: true
@@ -12,7 +11,7 @@ services:
       - key: DJANGO_ENV
         value: production
       - key: DJANGO_DEBUG
-        value: false
+        value: "false"
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_ALLOWED_HOSTS
@@ -34,7 +33,7 @@ services:
       - key: EMAIL_HOST
         value: smtp.gmail.com
       - key: EMAIL_USE_TLS
-        value: true
+        value: "true"
       - key: EMAIL_PORT
         value: 587
       - key: DJANGO_SITE_ID
