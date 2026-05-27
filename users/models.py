@@ -42,6 +42,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 	email = models.EmailField(unique=True)
 	username = models.CharField(max_length=150, unique=True)
 	full_name = models.CharField(max_length=255, blank=True)
+	phone_number = models.CharField(max_length=32, blank=True)
 	institution = models.CharField(max_length=255, blank=True)
 	student_id = models.CharField(max_length=64, blank=True)
 	preferences = models.JSONField(default=dict, blank=True)

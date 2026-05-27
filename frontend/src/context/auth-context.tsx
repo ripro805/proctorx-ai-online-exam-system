@@ -7,6 +7,7 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  phone_number?: string;
   avatar?: string;
 }
 
@@ -16,6 +17,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>;
   register: (name: string, email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  updateUser: (patch: Partial<User>) => void;
   ready: boolean;
 }
 
@@ -52,8 +54,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(null);
   };
 
+  const updateUser = (patch: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      setStoredUser(next);
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout, ready }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout, updateUser, ready }}>
       {children}
     </AuthContext.Provider>
   );

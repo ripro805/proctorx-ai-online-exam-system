@@ -37,6 +37,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'email',
             'username',
             'name',
+            'phone_number',
             'role',
             'institution',
             'student_id',
@@ -51,7 +52,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('email', 'username', 'name', 'institution', 'student_id', 'preferences', 'password')
+        fields = ('email', 'username', 'name', 'phone_number', 'institution', 'student_id', 'preferences', 'password')
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)

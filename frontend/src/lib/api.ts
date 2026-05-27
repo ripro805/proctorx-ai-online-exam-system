@@ -5,6 +5,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: Role;
+  phone_number?: string;
 }
 
 export type ExamAnswerPayload = {
