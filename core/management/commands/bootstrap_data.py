@@ -43,3 +43,26 @@ class Command(BaseCommand):
                 self.stdout.write('No quick seed script found; skipping')
         else:
             self.stdout.write('DB already has exam data; skipping seed')
+
+        # Ensure Postgres sequences are set correctly if running on Postgres
+        try:
+            from django.db import connection
+            vendor = connection.vendor
+            if vendor == 'postgresql':
+                seq_models = [
+                    ('exams_question', 'id'),
+                    ('exams_choice', 'id'),
+                    ('exams_exam', 'id'),
+                    ('proctoring_proctorlog', 'id'),
+                    ('results_result', 'id'),
+                ]
+                with connection.cursor() as cur:
+                    for table, col in seq_models:
+                        try:
+                            cur.execute("SELECT setval(pg_get_serial_sequence(%s, %s), COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)", [table, col, col, table])
+                            self.stdout.write(f'set sequence for {table}.{col}')
+                        except Exception as e:
+                            self.stderr.write(f'failed to set sequence for {table}: {e}')
+        except Exception:
+            # non-fatal; skip if DB doesn't support sequences
+            pass
