@@ -32,6 +32,9 @@ coverage/
 htmlcov/
 staticfiles/
 media/
+/public/
+/frontend/public/
+/frontend/out-api-index.js
 
 # IDEs and OS
 .vscode/

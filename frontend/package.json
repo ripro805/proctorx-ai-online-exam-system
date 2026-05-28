@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "postbuild": "node ./scripts/make-server-wrapper.js",
+    "postbuild": "node ./scripts/copy-assets.js && node ./scripts/make-server-wrapper.js",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
