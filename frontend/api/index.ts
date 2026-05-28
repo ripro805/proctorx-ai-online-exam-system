@@ -1,4 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+/// <reference types="node" />
+import type { IncomingMessage, ServerResponse } from "http";
 
 import { renderErrorPage } from "../src/lib/error-page";
 
@@ -60,7 +61,8 @@ async function toRequest(req: IncomingMessage): Promise<Request> {
     if (Array.isArray(value)) {
       for (const entry of value) headers.append(key, entry);
     } else {
-      headers.set(key, value);
+      // value can be string | undefined | number | null in some environments — stringify to satisfy Headers
+      headers.set(key, String(value));
     }
   }
 
@@ -71,7 +73,8 @@ async function toRequest(req: IncomingMessage): Promise<Request> {
   };
 
   if (body && body.length > 0) {
-    init.body = body;
+    // convert Buffer to Uint8Array for Request body to satisfy TypeScript DOM BodyInit
+    init.body = new Uint8Array(body);
     init.duplex = "half";
   }
 
