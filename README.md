@@ -14,6 +14,28 @@ The frontend talks to the backend through the API base URL defined in `frontend/
 - `VITE_API_BASE_URL` → REST API calls such as login, refresh token, exams, questions
 - `VITE_WS_BASE_URL` → WebSocket connections for live/proctoring features
 
+## Live links
+
+- **Frontend (Vercel):** `https://proctorx-ai-web.vercel.app`
+- **Backend API (Render):** `https://proctorx-ai-api.onrender.com`
+- **Backend Admin:** `https://proctorx-ai-api.onrender.com/admin/login/`
+
+> If you later switch to a custom domain, update these links and the env vars (`VITE_API_BASE_URL`, `VITE_WS_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`) together.
+
+## Role-based feature matrix
+
+| Role | Core capabilities | Advanced / AI capabilities |
+|---|---|---|
+| **Admin** | Manage users, roles, system configuration, global monitoring, access admin panel | Review proctoring logs and platform-wide performance signals |
+| **Teacher** | Create exams, manage questions/choices, publish exams, monitor student attempts, view results | Use AI-assisted grading/tutoring services and proctor insights for academic integrity |
+| **Student** | Register/login, enroll in exams, attempt questions, submit answers, see results/progress | Receive AI tutor support and participate in monitored/proctored exam sessions |
+
+### Experience by role (quick flow)
+
+- **Admin journey:** platform setup → governance → oversight
+- **Teacher journey:** exam design → publish → monitor → evaluate
+- **Student journey:** join exam → attempt → submit → review performance
+
 ## Architecture
 
 ```mermaid
