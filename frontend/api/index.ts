@@ -1,6 +1,8 @@
 /// <reference types="node" />
 import type { IncomingMessage, ServerResponse } from "http";
 
+import fs from "fs";
+import path from "path";
 import { renderErrorPage } from "../src/lib/error-page";
 
 type BuiltServer = {
@@ -11,10 +13,22 @@ let serverEntryPromise: Promise<BuiltServer> | undefined;
 
 async function getServerEntry(): Promise<BuiltServer> {
   if (!serverEntryPromise) {
-    // @ts-ignore Generated at build time; no static declaration file is available in Vercel builds.
-    serverEntryPromise = import("../dist/server/index.js").then(
-      (mod) => ((mod as { default?: BuiltServer }).default ?? (mod as unknown as BuiltServer)),
-    );
+    // Attempt to import the build-generated server entry. If it fails, include helpful diagnostics in the error.
+    const serverIndexPath = path.join(__dirname, "..", "dist", "server", "index.js");
+    try {
+      if (!fs.existsSync(serverIndexPath)) {
+        throw new Error(`Build artifact not found at ${serverIndexPath}`);
+      }
+      // @ts-ignore Generated at build time; no static declaration file is available in Vercel builds.
+      serverEntryPromise = import("../dist/server/index.js").then(
+        (mod) => ((mod as { default?: BuiltServer }).default ?? (mod as unknown as BuiltServer)),
+      );
+    } catch (err) {
+      // rethrow with more context for Vercel logs
+      const message = `Failed to import generated server entry: ${(err as Error).message}`;
+      console.error(message, err);
+      throw new Error(message);
+    }
   }
 
   return serverEntryPromise;
