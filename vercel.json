@@ -7,18 +7,18 @@
       "maxDuration": 30
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "\\/(.*\\.(js|css|map|png|jpg|jpeg|svg|ico|json|woff2|woff|ttf))",
-      "destination": "/frontend/dist/client/$1"
+      "src": "^/assets/(.*)$",
+      "dest": "/frontend/dist/client/assets/$1"
     },
     {
-      "source": "\\/assets\\/(.*)",
-      "destination": "/frontend/dist/client/assets/$1"
+      "src": "^/(.*\\.(js|css|map|png|jpg|jpeg|svg|ico|json|woff2|woff|ttf))$",
+      "dest": "/frontend/dist/client/$1"
     },
     {
-      "source": "\\/(.*)",
-      "destination": "/api/index2?pathname=$1"
+      "src": "^/(.*)$",
+      "dest": "/api/index2?pathname=$1"
     }
   ]
 }
