@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build",
+  "installCommand": "cd frontend && npm ci",
+  "buildCommand": "cd frontend && npm run build",
   "functions": {
     "api/index2.ts": {
       "maxDuration": 30
