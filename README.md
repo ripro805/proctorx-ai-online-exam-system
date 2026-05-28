@@ -72,6 +72,33 @@ flowchart LR
 - Proctoring logs and AI-assisted monitoring
 - SSR-friendly frontend with a clean production build
 
+## Proctoring system (detailed)
+
+The `proctoring/` module is designed to help maintain exam integrity in real-time and post-exam review.
+
+### What the system monitors
+
+- **Session behavior events:** suspicious activity signals during an active exam session
+- **Exam context metadata:** user, exam, and timestamp-linked monitoring records
+- **WebSocket-ready live flow:** near real-time event delivery path for active proctoring dashboards
+- **Reviewable history:** event logs that can be audited later by teachers/admins
+
+### Typical proctoring flow
+
+1. Student starts an exam session.
+2. Frontend captures exam-session proctoring signals/events.
+3. Backend stores structured proctoring records (`proctoring` app models/endpoints).
+4. Teachers/Admins review logs and flags to detect integrity risks.
+5. Final result evaluation can include proctoring evidence.
+
+### Why this matters
+
+- Reduces unfair exam behavior risk
+- Gives instructors evidence-backed review tools
+- Improves trust in online assessments at scale
+
+> Note: exact trigger sensitivity, policy thresholds, and escalation rules should be aligned with your institution's academic integrity policy.
+
 ## Local setup
 
 ### Prerequisites

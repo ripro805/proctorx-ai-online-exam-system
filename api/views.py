@@ -93,23 +93,35 @@ class StudentDashboardAPIView(APIView):
 
 	def get(self, request):
 		now = timezone.now()
-		published = Exam.objects.filter(is_published=True)
-		upcoming = [e for e in published.filter(start_time__gt=now).order_by('start_time') if can_student_access_exam(request.user, e)][:10]
-		ongoing = [e for e in published.filter(start_time__lte=now, end_time__gte=now).order_by('end_time') if can_student_access_exam(request.user, e)][:10]
+		published = Exam.objects.filter(is_published=True).order_by('start_time')
+		accessible = [e for e in published if can_student_access_exam(request.user, e)]
+		upcoming = [e for e in accessible if e.start_time > now][:10]
+		ongoing = [e for e in accessible if e.start_time <= now <= e.end_time][:10]
+		completed_exams = [e for e in accessible if e.end_time < now][:10]
 		student_results = Result.objects.filter(student=request.user).select_related('exam')
+		result_map = {r.exam_id: r for r in student_results}
 
 		completed_payload = []
-		for result in student_results.order_by('-created_at')[:10]:
-			exam = result.exam
-			completed_payload.append({
-				**_exam_card_payload(exam, now, status_override='completed', score=round(result.percentage or 0, 2)),
-				'result_id': result.id,
-			})
+		for exam in completed_exams:
+			result = result_map.get(exam.id)
+			item = _exam_card_payload(
+				exam,
+				now,
+				status_override='completed',
+				score=round(result.percentage or 0, 2) if result else None,
+			)
+			if result:
+				item['result_id'] = result.id
+			completed_payload.append(item)
+
+		avg_score = student_results.aggregate(avg=Avg('percentage'))['avg']
 
 		return Response({
 			'upcoming': [_exam_card_payload(e, now, status_override='upcoming') for e in upcoming],
 			'ongoing': [_exam_card_payload(e, now, status_override='ongoing') for e in ongoing],
 			'completed': completed_payload,
+			'submitted_completed': student_results.count(),
+			'average_score': round(avg_score, 2) if avg_score is not None else None,
 			'performance_trend': _trend_from_results(student_results),
 		}, status=status.HTTP_200_OK)
 

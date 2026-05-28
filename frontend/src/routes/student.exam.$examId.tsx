@@ -34,6 +34,7 @@ function ExamPage() {
   const [warnings, setWarnings] = useState(0);
   const [showWarning, setShowWarning] = useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const { events, logEvent } = useProctoring();
@@ -117,6 +118,13 @@ function ExamPage() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (!loading && timeLeft === 0) {
+      setShowWarning("Time is up. Please submit your exam now.");
+      setSubmitOpen(true);
+    }
+  }, [timeLeft, loading]);
+
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const ss = String(timeLeft % 60).padStart(2, "0");
   const q = questions[idx];
@@ -183,6 +191,15 @@ function ExamPage() {
         </aside>
         <section className="overflow-y-auto p-6 md:p-10">
           <div className="max-w-2xl mx-auto">
+            <Card className="border-border/60 mb-4 lg:hidden">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold mb-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" /> Live webcam
+                </div>
+                <WebcamMonitor studentId={studentId} studentName={studentName} examId={examId} />
+              </CardContent>
+            </Card>
+
             <div className="text-xs text-muted-foreground mb-2">Question {idx + 1} of {questions.length}</div>
             <h2 className="text-xl md:text-2xl font-semibold mb-6">{q?.text}</h2>
 
@@ -305,19 +322,31 @@ function ExamPage() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitOpen(false)}>Continue exam</Button>
-            <Button className="gradient-primary text-primary-foreground" onClick={() => {
-              const payload = Object.entries(answers).map(([qid, value]) => normalizeAnswerPayload(Number(qid), value));
-              submitExam(examId, payload).then(() => {
-                logEvent({
-                  studentId, studentName, examId,
-                  type: "EXAM_SUBMITTED",
-                  severity: severityFor("EXAM_SUBMITTED"),
-                  message: messageFor("EXAM_SUBMITTED"),
-                });
-                toast.success("Exam submitted successfully!");
-                navigate({ to: "/student/results" });
-              }).catch(() => toast.error("Failed to submit exam"));
-            }}>Submit now</Button>
+            <Button
+              className="gradient-primary text-primary-foreground"
+              disabled={submitting}
+              onClick={async () => {
+                try {
+                  setSubmitting(true);
+                  const payload = Object.entries(answers).map(([qid, value]) => normalizeAnswerPayload(Number(qid), value));
+                  await submitExam(examId, payload);
+                  logEvent({
+                    studentId, studentName, examId,
+                    type: "EXAM_SUBMITTED",
+                    severity: severityFor("EXAM_SUBMITTED"),
+                    message: messageFor("EXAM_SUBMITTED"),
+                  });
+                  toast.success("Exam submitted successfully!");
+                  navigate({ to: "/student/results" });
+                } catch (err: any) {
+                  toast.error(readableSubmitError(err));
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+            >
+              {submitting ? "Submitting..." : "Submit now"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -341,4 +370,16 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function readableSubmitError(err: any) {
+  const raw = String(err?.message ?? "").trim();
+  if (!raw) return "Failed to submit exam";
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.detail === "string") return parsed.detail;
+  } catch {
+    // non-JSON error body
+  }
+  return raw;
 }

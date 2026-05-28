@@ -17,6 +17,8 @@ function StudentDashboard() {
   const [upcoming, setUpcoming] = useState<any[]>([]);
   const [ongoing, setOngoing] = useState<any[]>([]);
   const [completed, setCompleted] = useState<any[]>([]);
+  const [submittedCompleted, setSubmittedCompleted] = useState<number>(0);
+  const [apiAvgScore, setApiAvgScore] = useState<number | null>(null);
   const [trend, setTrend] = useState<any[]>([]);
   const [analysis, setAnalysis] = useState<any>(null);
 
@@ -25,17 +27,25 @@ function StudentDashboard() {
       setUpcoming(data.upcoming ?? []);
       setOngoing(data.ongoing ?? []);
       setCompleted(data.completed ?? []);
+      setSubmittedCompleted(data.submitted_completed ?? 0);
+      setApiAvgScore(typeof data.average_score === "number" ? data.average_score : null);
       setTrend(data.performance_trend ?? []);
     }).catch(() => {
       setUpcoming([]);
       setOngoing([]);
       setCompleted([]);
+      setSubmittedCompleted(0);
+      setApiAvgScore(null);
       setTrend([]);
     });
     getAiPerformanceAnalysis().then(setAnalysis).catch(() => setAnalysis(null));
   }, []);
 
-  const avg = Math.round(completed.reduce((s, e) => s + (e.score ?? 0), 0) / Math.max(completed.length, 1));
+  const scoredCompleted = completed.filter((e) => typeof e.score === "number");
+  const localAvg = scoredCompleted.length > 0
+    ? Math.round(scoredCompleted.reduce((s, e) => s + (e.score ?? 0), 0) / scoredCompleted.length)
+    : null;
+  const avg = apiAvgScore ?? localAvg;
 
   return (
     <div className="space-y-6">
@@ -48,7 +58,13 @@ function StudentDashboard() {
         <StatCard title="Upcoming" value={upcoming.length} icon={Clock} accent="primary" trend="Next in 2 days" />
         <StatCard title="Ongoing" value={ongoing.length} icon={BookOpen} accent="warning" trend="Active right now" />
         <StatCard title="Completed" value={completed.length} icon={CheckCircle2} accent="success" trend="This term" />
-        <StatCard title="Average Score" value={`${avg}%`} icon={TrendingUp} accent="primary" trend="↑ 4% from last month" />
+        <StatCard
+          title="Average Score"
+          value={avg === null ? "N/A" : `${avg}%`}
+          icon={TrendingUp}
+          accent="primary"
+          trend={submittedCompleted > 0 ? "Based on submitted exams" : "Submit an exam to unlock stats"}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

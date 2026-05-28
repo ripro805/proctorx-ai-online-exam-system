@@ -109,7 +109,8 @@ class ExamSubmitAPIView(APIView):
 			return Response({'detail': 'Exam access denied'}, status=status.HTTP_403_FORBIDDEN)
 
 		now = timezone.now()
-		if now > exam.end_time:
+		session = StudentExamSession.objects.filter(student=request.user, exam=exam).first()
+		if now > exam.end_time and not session:
 			return Response({'detail': 'Exam time expired'}, status=status.HTTP_400_BAD_REQUEST)
 
 		if Result.objects.filter(exam=exam, student=request.user).exists():
