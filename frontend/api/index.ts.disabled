@@ -1,0 +1,11 @@
+/// <reference types="node" />
+// Disabled copy of frontend/api/index.ts — renamed to avoid Vercel function path conflicts.
+// Original diagnostic marker preserved below for reference.
+console.log("[proctorx-api] api/index.ts (disabled) - original contents preserved")
+
+/*
+Full original file moved to .disabled to avoid Vercel conflict with root api/index.js bridge.
+If you need to re-enable, rename back to index.ts and remove the root-level api/index.js bridge.
+
+(Original content omitted in repository copy for brevity.)
+*/
