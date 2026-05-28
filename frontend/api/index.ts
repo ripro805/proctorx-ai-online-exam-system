@@ -4,6 +4,10 @@ import type { IncomingMessage, ServerResponse } from "http";
 import fs from "fs";
 import path from "path";
 
+// Diagnostic marker to confirm which version of this file is deployed on Vercel.
+// Look for this string in Vercel function logs to verify the serverless bundle is up-to-date.
+console.log("[proctorx-api] api/index.ts loaded - inline-fallback-v2");
+
 // The original `renderErrorPage` lives in `frontend/src/lib/error-page.ts` which
 // is not guaranteed to be available to the serverless runtime. Include a small
 // fallback here so the function can render a helpful error page even when the
