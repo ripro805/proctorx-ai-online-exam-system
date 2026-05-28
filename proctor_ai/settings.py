@@ -50,8 +50,12 @@ SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DJANGO_DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+import os
 
+ALLOWED_HOSTS = os.environ.get(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1"
+).split(",")
 
 DJANGO_ENV = config('DJANGO_ENV', default='development')
 USE_NEON_DATABASE = config('USE_NEON_DATABASE', default=False, cast=bool)
