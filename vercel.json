@@ -3,7 +3,7 @@
   "installCommand": "cd frontend && npm ci",
   "buildCommand": "cd frontend && npm run build",
   "functions": {
-    "api/index2.ts": {
+    "api/index.ts": {
       "maxDuration": 30
     }
   },
@@ -18,7 +18,7 @@
     },
     {
       "src": "^/(.*)$",
-      "dest": "/api/index2?pathname=$1"
+      "dest": "/api/index?pathname=$1"
     }
   ]
 }
