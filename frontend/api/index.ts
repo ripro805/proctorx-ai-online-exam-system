@@ -11,6 +11,7 @@ let serverEntryPromise: Promise<BuiltServer> | undefined;
 
 async function getServerEntry(): Promise<BuiltServer> {
   if (!serverEntryPromise) {
+    // @ts-ignore Generated at build time; no static declaration file is available in Vercel builds.
     serverEntryPromise = import("../dist/server/index.js").then(
       (mod) => ((mod as { default?: BuiltServer }).default ?? (mod as unknown as BuiltServer)),
     );
