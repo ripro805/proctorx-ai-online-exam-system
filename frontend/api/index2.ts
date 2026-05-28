@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
 // Diagnostic marker to confirm which version of this file is deployed on Vercel.
 // Look for this string in Vercel function logs to verify the serverless bundle is up-to-date.
@@ -48,6 +49,80 @@ type BuiltServer = {
 };
 
 let serverEntryPromise: Promise<BuiltServer> | undefined;
+
+function getApiDir(): string {
+  const __filename = fileURLToPath(import.meta.url);
+  return path.dirname(__filename);
+}
+
+function getAssetSearchRoots(): string[] {
+  const apiDir = getApiDir();
+  return [
+    path.join(apiDir, "..", "public"),
+    path.join(apiDir, "..", "dist", "client"),
+    path.join(apiDir, "..", "dist", "client", "assets"),
+    path.join(process.cwd(), "public"),
+    path.join(process.cwd(), "dist", "client"),
+  ];
+}
+
+function getContentType(filePath: string): string {
+  if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
+  if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "application/javascript; charset=utf-8";
+  if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".ico")) return "image/x-icon";
+  if (filePath.endsWith(".png")) return "image/png";
+  if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) return "image/jpeg";
+  if (filePath.endsWith(".woff2")) return "font/woff2";
+  if (filePath.endsWith(".woff")) return "font/woff";
+  if (filePath.endsWith(".ttf")) return "font/ttf";
+  return "application/octet-stream";
+}
+
+function tryResolveStaticFile(requestPath: string): string | null {
+  const normalized = requestPath.replace(/^\/+/, "");
+  const searchPaths = normalized.startsWith("assets/")
+    ? [normalized, normalized.slice("assets/".length), `assets/${normalized}`]
+    : [normalized, `assets/${normalized}`];
+
+  for (const root of getAssetSearchRoots()) {
+    for (const rel of searchPaths) {
+      const candidate = path.join(root, rel);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function serveStaticIfPresent(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  const url = new URL(req.url ?? "/", `https://${req.headers.host ?? "localhost"}`);
+  const pathname = url.pathname;
+
+  const isStaticRequest =
+    pathname === "/favicon.ico" ||
+    pathname.startsWith("/assets/") ||
+    /\.(css|js|mjs|map|png|jpg|jpeg|svg|ico|json|woff2?|ttf)$/.test(pathname);
+
+  if (!isStaticRequest) {
+    return false;
+  }
+
+  const filePath = tryResolveStaticFile(pathname);
+  if (!filePath) {
+    return false;
+  }
+
+  const body = fs.readFileSync(filePath);
+  res.statusCode = 200;
+  res.setHeader("content-type", getContentType(filePath));
+  res.setHeader("cache-control", "public, max-age=31536000, immutable");
+  res.end(body);
+  return true;
+}
 
 async function getServerEntry(): Promise<BuiltServer> {
   if (!serverEntryPromise) {
@@ -175,6 +250,10 @@ async function sendResponse(response: Response, res: ServerResponse) {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
+    if (await serveStaticIfPresent(req, res)) {
+      return;
+    }
+
     const server = await getServerEntry();
     const request = await toRequest(req);
     const response = await server.fetch(request, {}, {});
