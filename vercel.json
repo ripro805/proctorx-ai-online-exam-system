@@ -10,11 +10,11 @@
   "rewrites": [
     {
       "source": "\\/(.*\\.(js|css|map|png|jpg|jpeg|svg|ico|json|woff2|woff|ttf))",
-      "destination": "/dist/client/$1"
+      "destination": "/frontend/dist/client/$1"
     },
     {
       "source": "\\/assets\\/(.*)",
-      "destination": "/dist/client/assets/$1"
+      "destination": "/frontend/dist/client/assets/$1"
     },
     {
       "source": "\\/(.*)",
