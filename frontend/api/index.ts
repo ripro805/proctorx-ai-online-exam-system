@@ -52,7 +52,22 @@ let serverEntryPromise: Promise<BuiltServer> | undefined;
 async function getServerEntry(): Promise<BuiltServer> {
   if (!serverEntryPromise) {
     // Attempt to import the build-generated server entry. If it fails, include helpful diagnostics in the error.
-    const serverIndexPath = path.join(__dirname, "..", "dist", "server", "index.js");
+    // In ESM environments (Vercel serverless) `__dirname` is not defined, so resolve
+    // the directory from `import.meta.url` using `fileURLToPath` when needed.
+    let serverIndexPath: string;
+    if (typeof __dirname !== "undefined") {
+      serverIndexPath = path.join(__dirname, "..", "dist", "server", "index.js");
+    } else {
+      try {
+        const { fileURLToPath } = await import("url");
+        const __filename = fileURLToPath(import.meta.url);
+        const __dir = path.dirname(__filename);
+        serverIndexPath = path.join(__dir, "..", "dist", "server", "index.js");
+      } catch (e) {
+        // Fallback to cwd — may be less reliable but better than throwing here
+        serverIndexPath = path.join(process.cwd(), "dist", "server", "index.js");
+      }
+    }
     try {
       if (!fs.existsSync(serverIndexPath)) {
         throw new Error(`Build artifact not found at ${serverIndexPath}`);
