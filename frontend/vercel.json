@@ -3,7 +3,7 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "functions": {
-    "api/index.ts": {
+    "api/index2.ts": {
       "maxDuration": 30
     }
   },
