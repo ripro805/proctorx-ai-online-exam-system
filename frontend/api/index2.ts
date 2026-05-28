@@ -72,10 +72,19 @@ async function getServerEntry(): Promise<BuiltServer> {
       if (!fs.existsSync(serverIndexPath)) {
         throw new Error(`Build artifact not found at ${serverIndexPath}`);
       }
-      // @ts-ignore Generated at build time; no static declaration file is available in Vercel builds.
-      serverEntryPromise = import("../dist/server/index.js").then(
-        (mod) => ((mod as { default?: BuiltServer }).default ?? (mod as unknown as BuiltServer)),
-      );
+      // Import the built server entry by file path. Convert to file:// URL for ESM dynamic import.
+      try {
+        const { pathToFileURL } = await import("url");
+        const serverIndexUrl = pathToFileURL(serverIndexPath).href;
+        console.log("[proctorx-api] resolving serverIndexPath=", serverIndexPath);
+        // @ts-ignore Generated at build time; no static declaration file is available in Vercel builds.
+        serverEntryPromise = import(serverIndexUrl).then(
+          (mod) => ((mod as { default?: BuiltServer }).default ?? (mod as unknown as BuiltServer)),
+        );
+      } catch (impErr) {
+        console.error("[proctorx-api] dynamic import failed", impErr);
+        throw impErr;
+      }
     } catch (err) {
       // rethrow with more context for Vercel logs
       const message = `Failed to import generated server entry: ${(err as Error).message}`;
