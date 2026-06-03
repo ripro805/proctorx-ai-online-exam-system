@@ -17,7 +17,7 @@ def _post_json(url: str, payload: dict, headers: dict[str, str]) -> dict:
         return json.loads(resp.read().decode('utf-8'))
 
 
-def generate_text(prompt: str, system_prompt: str = '', model: str | None = None) -> str:
+def generate_text(prompt: str, system_prompt: str = '', model: str | None = None, temperature: float = 0.5) -> str:
     api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:
         raise AIServiceError('Gemini API key not configured')
@@ -25,7 +25,7 @@ def generate_text(prompt: str, system_prompt: str = '', model: str | None = None
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}'
     payload = {
         'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
-        'generationConfig': {'temperature': 0.5, 'maxOutputTokens': 1024},
+        'generationConfig': {'temperature': temperature, 'maxOutputTokens': 1024},
     }
     if system_prompt:
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
@@ -43,7 +43,7 @@ def generate_text(prompt: str, system_prompt: str = '', model: str | None = None
         raise AIServiceError(f'Gemini request failed: {exc}') from exc
 
 
-def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[dict[str, str]] | None = None, model: str | None = None) -> str:
+def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[dict[str, str]] | None = None, model: str | None = None, temperature: float = 0.2) -> str:
     api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:
         raise AIServiceError('Gemini API key not configured')
@@ -58,7 +58,7 @@ def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[
 
     payload = {
         'contents': [{'role': 'user', 'parts': parts}],
-        'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 1024},
+        'generationConfig': {'temperature': temperature, 'maxOutputTokens': 1024},
     }
     if system_prompt:
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import json
+import random
+import re
+import uuid
+from html import unescape
 from dataclasses import dataclass
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import urlopen
 
 from .gemini_service import generate_text as gemini_generate_text, AIServiceError
 from .groq_service import generate_text as groq_generate_text
@@ -38,7 +45,7 @@ def _fallback_text(prompt: str, context: dict[str, Any] | None = None) -> str:
     )
 
 
-def route_chat(messages: list[dict[str, str]], system_prompt: str = '', context: dict[str, Any] | None = None) -> AIResponse:
+def route_chat(messages: list[dict[str, str]], system_prompt: str = '', context: dict[str, Any] | None = None, temperature: float = 0.5) -> AIResponse:
     prompt = _messages_to_prompt(messages)
     providers = (
         ('gemini', gemini_generate_text),
@@ -48,7 +55,7 @@ def route_chat(messages: list[dict[str, str]], system_prompt: str = '', context:
     last_error = None
     for provider, fn in providers:
         try:
-            content = fn(prompt=prompt, system_prompt=system_prompt)
+            content = fn(prompt=prompt, system_prompt=system_prompt, temperature=temperature)
             return AIResponse(content=content, provider=provider)
         except AIServiceError as exc:
             last_error = exc
@@ -317,7 +324,235 @@ def _normalize_study_plan_payload(raw: Any, subject: str, context: dict[str, Any
     return _study_plan_fallback(subject, context) | {'provider': response.provider, 'fallback': response.fallback}
 
 
+def _topic_keywords(topic: str) -> list[str]:
+    return [token for token in re.findall(r"[a-zA-Z0-9]+", (topic or '').lower()) if len(token) > 2]
+
+
+def _subject_from_topic(topic: str) -> str:
+    low = (topic or '').lower()
+    mapping = {
+        'algorithm': 'Algorithms',
+        'data structure': 'Data Structures',
+        'database': 'DBMS',
+        'dbms': 'DBMS',
+        'operating system': 'Operating Systems',
+        'os': 'Operating Systems',
+        'network': 'Computer Networks',
+        'software engineering': 'Software Engineering',
+        'machine learning': 'Machine Learning',
+        'artificial intelligence': 'Artificial Intelligence',
+        'ai': 'Artificial Intelligence',
+        'oop': 'OOP',
+        'compiler': 'Compiler Design',
+        'cyber': 'Cyber Security',
+        'security': 'Cyber Security',
+        'web': 'Web Development',
+    }
+    for key, subject in mapping.items():
+        if key in low:
+            return subject
+    return topic
+
+
+def _fetch_json(url: str, timeout: int = 8) -> Any:
+    with urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
+def _extract_sentences(text: str, limit: int = 5) -> list[str]:
+    if not text:
+        return []
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+    cleaned = [part.strip() for part in parts if len(part.strip()) > 25]
+    return cleaned[:limit]
+
+
+def _trim_text(text: str, limit: int = 160) -> str:
+    text = re.sub(r'\s+', ' ', (text or '').strip())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + '…'
+
+
+def _clean_question_text(text: str, topic: str) -> str:
+    cleaned = re.sub(
+        r'^(concept check\s*[a-f0-9-]*:?\s*|according to the external source,\s*|according to the source,\s*|based on the external source,\s*|from the external source,\s*)',
+        '',
+        (text or '').strip(),
+        flags=re.I,
+    )
+    topic_pattern = re.escape((topic or '').strip())
+    if topic_pattern:
+        cleaned = re.sub(rf'\b{topic_pattern}\b\s*[:\-–—,]?\s*', '', cleaned, flags=re.I)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = cleaned.strip(':;,-–—')
+    return cleaned or (topic or 'Question').strip()
+
+
+def _de_topicify_sentence(text: str, topic: str) -> str:
+    sentence = (text or '').strip()
+    if topic:
+        sentence = re.sub(rf'\b{re.escape(topic)}\b', 'this field', sentence, flags=re.I)
+    sentence = re.sub(r'\s+', ' ', sentence).strip()
+    return sentence
+
+
+def _html_to_text(html: str) -> str:
+    cleaned = re.sub(r'<script.*?</script>', ' ', html, flags=re.S | re.I)
+    cleaned = re.sub(r'<style.*?</style>', ' ', cleaned, flags=re.S | re.I)
+    cleaned = re.sub(r'</p>|</div>|</li>|<br\s*/?>|</h\d>', '. ', cleaned, flags=re.I)
+    cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
+    cleaned = unescape(cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
+def _fetch_external_topic_context(topic: str) -> dict[str, Any]:
+    query = quote(topic.strip() or 'computer science')
+    search_urls = [
+        f'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&utf8=1&origin=*',
+        f'https://en.wikipedia.org/w/rest.php/v1/search/title?q={query}&limit=5',
+    ]
+    title = topic
+    page_url = ''
+    summary = ''
+    extract = ''
+
+    for url in search_urls:
+        try:
+            data = _fetch_json(url)
+            if 'query' in data:
+                results = ((data.get('query') or {}).get('search')) or []
+                if results:
+                    title = results[0].get('title') or title
+                    break
+            else:
+                pages = data.get('pages') or []
+                if pages:
+                    title = pages[0].get('title') or title
+                    break
+        except Exception:
+            continue
+
+    try:
+        summary_url = f'https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title.replace(" ", "_"))}'
+        summary_data = _fetch_json(summary_url)
+        summary = summary_data.get('extract') or ''
+        page_url = (((summary_data.get('content_urls') or {}).get('desktop')) or {}).get('page') or ''
+        extract = summary
+    except Exception:
+        summary = ''
+
+    if not summary:
+        try:
+            fallback_url = f'https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&titles={quote(title)}&format=json&utf8=1&origin=*'
+            fallback_data = _fetch_json(fallback_url)
+            pages = ((fallback_data.get('query') or {}).get('pages')) or {}
+            first_page = next(iter(pages.values()), {})
+            summary = first_page.get('extract') or ''
+            page_url = page_url or f'https://en.wikipedia.org/wiki/{quote(title.replace(" ", "_"))}'
+            extract = summary
+        except Exception:
+            summary = ''
+
+    sentences = _extract_sentences(extract or summary, limit=6)
+    if not page_url:
+        page_url = f'https://en.wikipedia.org/wiki/{quote(title.replace(" ", "_"))}'
+
+    if len(sentences) < 4:
+        try:
+            html = urlopen(page_url, timeout=10).read().decode('utf-8', errors='ignore')
+            page_text = _html_to_text(html)
+            more_sentences = _extract_sentences(page_text, limit=12)
+            for sentence in more_sentences:
+                if sentence not in sentences and len(sentence) > 25:
+                    sentences.append(sentence)
+                if len(sentences) >= 8:
+                    break
+        except Exception:
+            pass
+
+    return {
+        'source': 'wikipedia',
+        'title': title,
+        'summary': summary,
+        'sentences': sentences,
+        'url': page_url,
+    }
+
+
+def _synthetic_quiz_fallback(topic: str, difficulty: str, count: int, recent_questions: list[str], source_context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    rng = random.SystemRandom()
+    recent_set = {str(q).strip().lower() for q in recent_questions if isinstance(q, str)}
+    source_sentences = (source_context or {}).get('sentences') or []
+    source_pool = [sentence for sentence in source_sentences if sentence and len(sentence) > 25]
+    if not source_pool:
+        source_pool = [f'{topic} is studied through conceptual analysis and practical application.']
+
+    stem_templates = [
+        'Which statement is supported by this fact: {fact}?',
+        'What conclusion follows from this fact: {fact}?',
+        'Which interpretation matches this fact: {fact}?',
+        'Which choice is consistent with this fact: {fact}?',
+        'Which idea does this fact emphasize: {fact}?',
+        'Which option best reflects this fact: {fact}?',
+    ]
+
+    picked: list[dict[str, Any]] = []
+    seen = set()
+    attempts = 0
+    max_attempts = max(20, count * 8)
+    while len(picked) < count and attempts < max_attempts:
+        attempts += 1
+        correct_sentence = source_pool[len(picked) % len(source_pool)]
+        snippet = _trim_text(_de_topicify_sentence(correct_sentence, topic), 100)
+        q_text = stem_templates[len(picked) % len(stem_templates)].format(fact=snippet)
+        q_key = q_text.lower()
+        if q_key in seen or q_key in recent_set:
+            continue
+
+        distractor_candidates = [sentence for sentence in source_pool if sentence != correct_sentence]
+        distractors = []
+        if distractor_candidates:
+            sample_size = min(3, len(distractor_candidates))
+            distractors = rng.sample(distractor_candidates, sample_size)
+        while len(distractors) < 3:
+            filler_options = [
+                f'{topic} is only about memorizing isolated facts without understanding.' ,
+                f'{topic} is unrelated to computational problem-solving.' ,
+                f'{topic} focuses exclusively on one fixed technique for every situation.' ,
+                f'{topic} has no practical or theoretical applications.' ,
+            ]
+            filler = rng.choice(filler_options)
+            if filler not in distractors:
+                distractors.append(filler)
+
+        correct = _trim_text(correct_sentence, 180)
+        options_list = [correct, *[_trim_text(d, 180) for d in distractors[:3]]]
+        rng.shuffle(options_list)
+        labels = ('A', 'B', 'C', 'D')
+        options = {label: options_list[idx] for idx, label in enumerate(labels)}
+        correct_label = labels[next(idx for idx, text in enumerate(options_list) if text == correct)]
+
+        picked.append({
+            'question': _clean_question_text(q_text, topic),
+            'options': options,
+            'correct_answer': correct_label,
+            'explanation': f'This answer is taken directly from the external source summary for {topic}.',
+        })
+        seen.add(q_key)
+
+    return picked
+
+
 def generate_quiz(topic: str, difficulty: str, count: int, context: dict[str, Any]) -> dict[str, Any]:
+    request_variant = uuid.uuid4().hex[:10]
+    recent_questions = context.get('recent_questions') or []
+    recent_questions_snippet = ''
+    if isinstance(recent_questions, list) and recent_questions:
+        recent_questions_snippet = '\n'.join(f'- {str(item)[:180]}' for item in recent_questions[:8])
+    source_context = _fetch_external_topic_context(topic)
+
     system_prompt = (
         "You are an expert university exam question writer. Produce realistic, professional, subject-wise MCQs "
         "that resemble real university examinations. Follow these rules strictly:\n"
@@ -327,17 +562,37 @@ def generate_quiz(topic: str, difficulty: str, count: int, context: dict[str, An
         "correct_answer (one of 'A','B','C','D'), explanation (string).\n"
         "- Questions must be concept-based, analytical where appropriate, and avoid placeholders like 'Option A' or 'Question 1'.\n"
         "- Options must be meaningful distractors, not repeated, and use domain terminology.\n"
+        "- Every request must produce a fresh, non-duplicate quiz variant.\n"
         "- Match the requested difficulty: Easy=fundamentals, Medium=conceptual reasoning, Hard=analytical/problem-solving.\n"
         "- Supported subjects include Data Structures, Algorithms, DBMS, Operating Systems, Computer Networks, "
         "Software Engineering, AI, Machine Learning, OOP, Compiler Design, Cyber Security.\n"
         "- Generate exactly the requested count of UNIQUE questions.\n"
+        "- Base the quiz primarily on the provided external source material, not on any local database bank.\n"
+        f"- External source title: {source_context.get('title') or topic}\n"
+        f"- External source URL: {source_context.get('url') or ''}\n"
+        f"- External source summary: {source_context.get('summary') or 'No summary available.'}\n"
+        f"- External source facts: {json.dumps(source_context.get('sentences') or [], ensure_ascii=False)}\n"
         f"Context: {_safe_json_snippet(context)}\n"
+    )
+
+    avoid_section = (
+        "Avoid repeating these exact question stems from the student's previous quiz and change the angle, phrasing, "
+        "and option ordering where possible:\n"
+        f"{recent_questions_snippet}\n"
+        if recent_questions_snippet
+        else "Create a fresh quiz variant that does not recycle the same template questions.\n"
     )
 
     user_msg = (
         f"Generate professional university-level MCQ questions for the subject/topic: {topic}.\n"
         f"Difficulty level: {difficulty}.\n"
         f"Count: {count}.\n"
+        f"Variant token: {request_variant}.\n"
+        f"External source title: {source_context.get('title') or topic}.\n"
+        f"External source URL: {source_context.get('url') or ''}.\n"
+        f"External source summary: {source_context.get('summary') or 'No summary available.'}.\n"
+        f"External source facts: {json.dumps(source_context.get('sentences') or [], ensure_ascii=False)}\n"
+        f"{avoid_section}"
         "Return JSON in this format exactly:\n"
         "{\n  \"topic\": \"...\",\n  \"difficulty\": \"...\",\n  \"questions\": [\n    {\n      \"question\": \"...\",\n      \"options\": { \"A\": \"...\", \"B\": \"...\", \"C\": \"...\", \"D\": \"...\" },\n      \"correct_answer\": \"A\",\n      \"explanation\": \"...\"\n    }\n  ]\n}\n"
     )
@@ -350,29 +605,48 @@ def generate_quiz(topic: str, difficulty: str, count: int, context: dict[str, An
         response = route_chat([
             {'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': user_msg},
-        ], system_prompt=system_prompt, context=context)
+        ], system_prompt=system_prompt, context=context, temperature=0.9)
         last_response = response
         parsed = _json_from_response(response.content)
         validated = _validate_quiz_payload(parsed, topic, difficulty, count)
         if validated is not None:
+            validated['questions'] = [
+                {
+                    **item,
+                    'question': _clean_question_text(item.get('question') or '', topic),
+                }
+                for item in validated.get('questions', [])
+            ]
             validated.setdefault('provider', response.provider)
             validated.setdefault('fallback', response.fallback)
             return validated
 
-    # If generation failed, return a deterministic non-placeholder fallback and mark fallback=True
-    questions = []
-    for i in range(max(1, count)):
-        questions.append({
-            'question': f'[{topic}] Review question {i+1}: Explain the primary concept behind {topic}.',
-            'options': {
-                'A': 'Fundamental definition or property',
-                'B': 'A common misconception/distractor',
-                'C': 'An advanced related concept',
-                'D': 'An unrelated technique',
-            },
-            'correct_answer': 'A',
-            'explanation': 'Answer A is the foundational definition; other options are distractors.',
-        })
+    # If provider generation failed, build a dynamic fallback from the external source first.
+    fallback_count = max(1, count)
+    questions: list[dict[str, Any]] = []
+
+    if len(questions) < fallback_count:
+        needed = fallback_count - len(questions)
+        synthetic = _synthetic_quiz_fallback(topic, difficulty, needed, recent_questions if isinstance(recent_questions, list) else [], source_context=source_context)
+        questions.extend(synthetic[:needed])
+
+    if len(questions) < fallback_count:
+        # Last-resort guard: still return valid shape with minimally varied content.
+        source_sentences = (source_context.get('sentences') or []) if isinstance(source_context, dict) else []
+        source_sentence = _trim_text(_de_topicify_sentence(source_sentences[0], topic), 100) if source_sentences else f'{topic} is studied through conceptual analysis and practical application.'
+        for i in range(len(questions), fallback_count):
+            questions.append({
+                'question': _clean_question_text(f'Which statement is supported by this fact: {source_sentence}?', topic),
+                'options': {
+                    'A': f'{topic} relies on core conceptual reasoning in practical scenarios.',
+                    'B': f'{topic} can be solved without any conceptual understanding.',
+                    'C': f'{topic} is unrelated to analysis and decision quality.',
+                    'D': f'{topic} should ignore trade-offs in real implementations.',
+                },
+                'correct_answer': 'A',
+                'explanation': f'The correct choice reflects the core principle behind {topic}.',
+            })
+
     return {
         'provider': last_response.provider if last_response else 'fallback',
         'fallback': True,

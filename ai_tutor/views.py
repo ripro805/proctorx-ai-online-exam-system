@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from django.db.models import Avg
 from django.db.models import Count
 from django.utils import timezone
@@ -175,8 +177,18 @@ class AIQuizAPIView(APIView):
         topic = request.data.get('topic') or request.data.get('subject') or 'General'
         difficulty = request.data.get('difficulty') or 'medium'
         count = int(request.data.get('question_count') or request.data.get('count') or 5)
+        recent_quiz = AIQuiz.objects.filter(student=request.user, topic=topic, difficulty=difficulty).order_by('-created_at').first()
+        recent_questions = []
+        if recent_quiz and isinstance(recent_quiz.quiz_data, dict):
+            for item in recent_quiz.quiz_data.get('questions') or []:
+                if isinstance(item, dict):
+                    question_text = item.get('question') or item.get('prompt') or ''
+                    if isinstance(question_text, str) and question_text.strip():
+                        recent_questions.append(question_text.strip())
         quiz_data = generate_quiz(topic, difficulty, count, {
             'weak_subjects': weak_subjects_for_student(request.user),
+            'recent_questions': recent_questions,
+            'request_variant': uuid.uuid4().hex[:10],
         })
         # Persist full quiz (includes correct answers & explanations) securely in backend
         quiz = AIQuiz.objects.create(student=request.user, topic=topic, difficulty=difficulty, quiz_data=quiz_data, provider=quiz_data.get('provider', 'fallback'))

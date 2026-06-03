@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
@@ -63,6 +64,44 @@ class AITutorTests(TransactionTestCase):
         msgs = AIMessage.objects.filter(conversation=conv)
         self.assertTrue(msgs.filter(role='user').exists())
         self.assertTrue(msgs.filter(role='assistant').exists())
+
+    @patch('ai_tutor.services.ai_router.route_chat')
+    def test_generate_quiz_uses_previous_questions_to_avoid_duplicates(self, mock_route):
+        class Resp:
+            content = json.dumps({
+                'topic': 'Algorithms',
+                'difficulty': 'Medium',
+                'questions': [
+                    {
+                        'question': 'What is the worst-case time complexity of binary search?',
+                        'options': {'A': 'O(log n)', 'B': 'O(n)', 'C': 'O(n log n)', 'D': 'O(1)'},
+                        'correct_answer': 'A',
+                        'explanation': 'Binary search halves the search space each step.',
+                    },
+                    {
+                        'question': 'Which sorting algorithm is generally stable and divide-and-conquer based?',
+                        'options': {'A': 'Merge sort', 'B': 'Quick sort', 'C': 'Heap sort', 'D': 'Selection sort'},
+                        'correct_answer': 'A',
+                        'explanation': 'Merge sort is stable and uses divide-and-conquer.',
+                    },
+                ],
+            })
+            provider = 'test'
+            fallback = False
+
+        mock_route.return_value = Resp()
+
+        from ai_tutor.services.ai_router import generate_quiz
+
+        quiz = generate_quiz('Algorithms', 'Medium', 2, {'recent_questions': ['What is the worst-case time complexity of binary search?']})
+
+        self.assertEqual(quiz['provider'], 'test')
+        self.assertEqual(len(quiz['questions']), 2)
+        called_kwargs = mock_route.call_args.kwargs
+        self.assertAlmostEqual(called_kwargs['temperature'], 0.9)
+        prompt_text = mock_route.call_args.args[0][1]['content']
+        self.assertIn('Avoid repeating these exact question stems', prompt_text)
+        self.assertIn('binary search', prompt_text.lower())
 
     def test_study_plan_endpoint_handles_proctor_timestamps(self):
         from django.utils import timezone

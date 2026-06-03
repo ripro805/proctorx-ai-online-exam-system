@@ -15,7 +15,7 @@ def _post_json(url: str, payload: dict, headers: dict[str, str]) -> dict:
         return json.loads(resp.read().decode('utf-8'))
 
 
-def generate_text(prompt: str, system_prompt: str = '', model: str | None = None) -> str:
+def generate_text(prompt: str, system_prompt: str = '', model: str | None = None, temperature: float = 0.5) -> str:
     api_key = os.environ.get('GROQ_API_KEY')
     if not api_key:
         raise AIServiceError('Groq API key not configured')
@@ -27,7 +27,7 @@ def generate_text(prompt: str, system_prompt: str = '', model: str | None = None
     try:
         data = _post_json(
             'https://api.groq.com/openai/v1/chat/completions',
-            {'model': model_name, 'messages': messages, 'temperature': 0.5},
+            {'model': model_name, 'messages': messages, 'temperature': temperature},
             {'Authorization': f'Bearer {api_key}'},
         )
         choices = data.get('choices') or []

@@ -13,6 +13,7 @@ from core.models import SystemSetting
 from core.serializers import SystemSettingSerializer
 from exams.models import Exam
 from exams.models import ExamProgress
+from exams.models import StudentAnswer
 from proctoring.models import ProctorLog, StudentExamSession
 from ai_tutor.utils import has_active_exam_session
 from results.models import Result
@@ -135,9 +136,37 @@ class StudentResultsOverviewAPIView(APIView):
 		payload = []
 		for result in results:
 			exam = result.exam
+			answers = StudentAnswer.objects.filter(student=request.user, exam=exam).select_related('question', 'choice').prefetch_related('question__choices').order_by('question_id')
+			question_details = []
+			for answer in answers:
+				question = answer.question
+				question_type = getattr(question, 'question_type', '') or 'mcq'
+				your_answer = None
+				if answer.choice_id and answer.choice:
+					your_answer = answer.choice.text
+				elif isinstance(answer.answer_data, dict):
+					your_answer = answer.answer_data.get('text') or answer.answer_data.get('image') or answer.answer_data.get('choice_text')
+				correct_answer = None
+				if question_type == 'mcq':
+					correct_choice = next((choice for choice in question.choices.all() if choice.is_correct), None)
+					correct_answer = correct_choice.text if correct_choice else None
+				else:
+					correct_answer_data = question.correct_answer_data or {}
+					correct_answer = correct_answer_data.get('text') or correct_answer_data.get('image') or correct_answer_data.get('correct_option')
+				question_details.append({
+					'question_id': question.id,
+					'question': question.text,
+					'question_type': question_type,
+					'your_answer': your_answer,
+					'correct_answer': correct_answer,
+					'explanation': question.explanation or '',
+					'is_correct': bool(answer.is_correct),
+					'answer_data': answer.answer_data or {},
+				})
 			payload.append({
 				**_exam_card_payload(exam, now, status_override='completed', score=round(result.percentage or 0, 2)),
 				'result_id': result.id,
+				'answers': question_details,
 			})
 		return Response({
 			'performance_trend': _trend_from_results(results),

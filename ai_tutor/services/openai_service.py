@@ -15,7 +15,7 @@ def _post_json(url: str, payload: dict, headers: dict[str, str]) -> dict:
         return json.loads(resp.read().decode('utf-8'))
 
 
-def generate_text(prompt: str, system_prompt: str = '', model: str | None = None) -> str:
+def generate_text(prompt: str, system_prompt: str = '', model: str | None = None, temperature: float = 0.5) -> str:
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise AIServiceError('OpenAI API key not configured')
@@ -27,7 +27,7 @@ def generate_text(prompt: str, system_prompt: str = '', model: str | None = None
     try:
         data = _post_json(
             'https://api.openai.com/v1/chat/completions',
-            {'model': model_name, 'messages': messages, 'temperature': 0.5},
+            {'model': model_name, 'messages': messages, 'temperature': temperature},
             {'Authorization': f'Bearer {api_key}'},
         )
         choices = data.get('choices') or []
@@ -41,7 +41,7 @@ def generate_text(prompt: str, system_prompt: str = '', model: str | None = None
         raise AIServiceError(f'OpenAI request failed: {exc}') from exc
 
 
-def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[dict[str, str]] | None = None, model: str | None = None) -> str:
+def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[dict[str, str]] | None = None, model: str | None = None, temperature: float = 0.2) -> str:
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise AIServiceError('OpenAI API key not configured')
@@ -63,7 +63,7 @@ def generate_multimodal_text(prompt: str, system_prompt: str = '', images: list[
     try:
         data = _post_json(
             'https://api.openai.com/v1/chat/completions',
-            {'model': model_name, 'messages': messages, 'temperature': 0.2},
+            {'model': model_name, 'messages': messages, 'temperature': temperature},
             {'Authorization': f'Bearer {api_key}'},
         )
         choices = data.get('choices') or []
