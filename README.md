@@ -16,9 +16,9 @@ The frontend talks to the backend through the API base URL defined in `frontend/
 
 ## Live links
 
-- **Frontend (Vercel):** `https://proctorx-ai-web.vercel.app`
-- **Backend API (Render):** `https://proctorx-ai-api.onrender.com`
-- **Backend Admin:** `https://proctorx-ai-api.onrender.com/admin/login/`
+- **Frontend (Vercel):** `[https://proctorx-ai-web.vercel.app](https://proctorx-ai-online-exam-system.vercel.app](https://proctorx-ai-online-exam-system.vercel.app/)`
+- **Backend API (Render):** `[https://proctorx-ai-api.onrender.com](https://proctorx-ai-online-exam-system.onrender.com)`
+- **Backend Admin:** `[https://proctorx-ai-api.onrender.com/admin/login/](https://proctorx-ai-online-exam-system.onrender.com/admin/login/)`
 
 > If you later switch to a custom domain, update these links and the env vars (`VITE_API_BASE_URL`, `VITE_WS_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`) together.
 
