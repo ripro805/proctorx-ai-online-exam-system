@@ -43,3 +43,6 @@ Thumbs.db
 
 # Certificates
 *.pem
+
+# Editor / AI tooling artifacts
+.puku/
