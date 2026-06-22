@@ -29,7 +29,7 @@ export function WebcamMonitor({
   studentId,
   studentName,
   examId,
-  intervalMs = 2500,
+  intervalMs = 1500,
   className,
 }: Props) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -47,11 +47,12 @@ export function WebcamMonitor({
     try {
       setCameraError(null);
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      // Request HD (720p) and let the browser negotiate. We list three ideal
-      // resolutions so cameras that can't deliver 720p fall back gracefully
-      // (e.g. older laptop cams that only do 480p) instead of failing.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
+          // HD 720p. Browsers that can't deliver 720p (e.g. older laptop cams
+          // that only do 480p) fall back gracefully because all three values
+          // are `ideal` rather than hard requirements. The actual delivered
+          // resolution is reflected in the UI via getSettings() below.
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30, max: 30 },
@@ -102,9 +103,10 @@ export function WebcamMonitor({
       const v = videoRef.current;
       const c = canvasRef.current;
       if (!v || !c || v.videoWidth === 0) return;
-
-      // HD publish canvas — drives the teacher's live tile. We cap at 1280x720
-      // so we never ship a 4K frame over WS/Channels every 2.5s.
+      // Publish canvas — drives the teacher's live tile. We cap at 1280x720
+      // so we never ship a 4K frame over WS/Channels every ~1.5s. The actual
+      // capture resolution is what the camera negotiated; if the camera gave
+      // us 480p we up-scale to 720p (browser bilinear) for the teacher.
       const PUB_MAX_W = 1280;
       const PUB_MAX_H = 720;
       const srcW = v.videoWidth;
@@ -112,31 +114,31 @@ export function WebcamMonitor({
       const scale = Math.min(1, PUB_MAX_W / srcW, PUB_MAX_H / srcH);
       const pubW = Math.max(1, Math.round(srcW * scale));
       const pubH = Math.max(1, Math.round(srcH * scale));
-
       c.width = pubW;
       c.height = pubH;
       const ctx = c.getContext("2d");
       if (!ctx) return;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(v, 0, 0, pubW, pubH);
+      const now = Date.now();
+      setLastSent(now);
+
+      // High-quality JPEG for the teacher feed (q=0.9 ≈ visually lossless
+      // for surveillance-style frames while still compressing well).
+      const dataUrl = c.toDataURL("image/jpeg", 0.9);
+      const analysis = await publishFrame({ studentId, studentName, examId, dataUrl, ts: now });
 
       // Small analysis canvas for face detection — keeps the skin-tone scan
       // cheap so it doesn't compete with the HD encode.
       const anaW = 240;
-      const anaH = Math.round(180 * (pubH / pubW));
+      const anaH = Math.max(1, Math.round(180 * (pubH / pubW)));
       const anaCanvas = document.createElement("canvas");
       anaCanvas.width = anaW;
       anaCanvas.height = anaH;
       const anaCtx = anaCanvas.getContext("2d");
       if (!anaCtx) return;
-      anaCtx.drawImage(v, 0, 0, anaW, anaH);
-
-      const now = Date.now();
-      setLastSent(now);
-
-      // High-quality JPEG for the teacher feed (q=0.82 ≈ visually lossless
-      // for surveillance-style frames while still compressing well).
-      const dataUrl = c.toDataURL("image/jpeg", 0.82);
-      const analysis = await publishFrame({ studentId, studentName, examId, dataUrl, ts: now });
+      anaCtx.drawImage(c, 0, 0, anaW, anaH);
 
       let raw: FaceState = analyzeFrame(anaCtx, anaW, anaH);
       if (analysis) {
@@ -219,6 +221,7 @@ export function WebcamMonitor({
 
       {permission === "granted" && (
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <ResolutionHint videoRef={videoRef} />
           <span>AI face check every {Math.round(intervalMs / 1000)}s</span>
           {lastSent && <span>frame: {new Date(lastSent).toLocaleTimeString()}</span>}
         </div>
@@ -230,6 +233,20 @@ export function WebcamMonitor({
       )}
     </div>
   );
+}
+
+function ResolutionHint({ videoRef }: { videoRef: React.MutableRefObject<HTMLVideoElement | null> }) {
+  const v = videoRef.current;
+  const aw = v?.dataset.actualWidth;
+  const ah = v?.dataset.actualHeight;
+  if (!aw || !ah) return <span>HD live</span>;
+  const w = Number(aw);
+  const h = Number(ah);
+  const tier =
+    w >= 1280 || h >= 720 ? "HD 720p" :
+    w >= 854 || h >= 480 ? "SD 480p" :
+    w >= 640 || h >= 360 ? "Low 360p" : "Very low";
+  return <span>{tier} • {w}×{h}</span>;
 }
 
 function FaceBadge({ face }: { face: FaceState }) {
