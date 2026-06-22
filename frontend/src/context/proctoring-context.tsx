@@ -87,42 +87,110 @@ export function ProctoringProvider({ children }: { children: React.ReactNode }) 
     };
   }, [user]);
 
+  // Refs used outside the WS effect so publishFrame can find the live socket
+  // even after the effect re-runs (login / logout / hot-reload).
+  const wsRef = React.useRef<WebSocket | null>(null);
+  const wsBufferRef = React.useRef<string[]>([]);
+  const wsOpenRef = React.useRef<boolean>(false);
+
   React.useEffect(() => {
-    if (!user) return;
-    const ws = new WebSocket(wsUrl("/ws/proctoring/"));
-    const wsRef = { current: ws } as { current: WebSocket | null };
-    ws.onmessage = (evt) => {
+    if (!user) {
+      // Close any socket from a previous user.
+      try { wsRef.current?.close(); } catch {}
+      wsRef.current = null;
+      wsOpenRef.current = false;
+      (window as any).__proctoring_ws = wsRef;
+      (window as any).__proctoring_ws_open__ = false;
+      return;
+    }
+
+    let cancelled = false;
+    let retryDelay = 1000;
+
+    const connect = () => {
+      if (cancelled) return;
+      const token = (typeof window !== "undefined" && localStorage.getItem("proctorx_access")) || "";
+      const url = wsUrl("/ws/proctoring/", token || undefined);
+      let ws: WebSocket;
       try {
-        const msg = JSON.parse(evt.data);
-        if (msg?.event === "frame" && msg.payload?.frame) {
-          const f = msg.payload;
-          setLiveFrames((prev) => ({
-            ...prev,
-            [f.student_id]: {
-              studentId: String(f.student_id),
-              studentName: f.student_name,
-              examId: String(f.exam_id),
-              dataUrl: f.frame,
-              ts: Date.parse(f.timestamp) || Date.now(),
-            },
-          }));
-          return;
-        }
-        if (msg?.payload?.event_type || msg?.event) {
-          const event = mapBroadcastToEvent(msg);
-          if (event) {
-            setEvents((prev) => [event, ...prev].slice(0, 200));
-          }
-        }
+        ws = new WebSocket(url);
       } catch {
-        // ignore
+        scheduleReconnect();
+        return;
       }
+      wsRef.current = ws;
+      wsOpenRef.current = false;
+      // Expose to the rest of the app (publishFrame, debugging).
+      (window as any).__proctoring_ws = wsRef;
+      (window as any).__proctoring_ws_open__ = false;
+
+      ws.onopen = () => {
+        wsOpenRef.current = true;
+        (window as any).__proctoring_ws_open__ = true;
+        retryDelay = 1000;
+        // Flush queued frames from before the socket was open.
+        while (wsBufferRef.current.length && ws.readyState === WebSocket.OPEN) {
+          const msg = wsBufferRef.current.shift();
+          if (msg) ws.send(msg);
+        }
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg?.event === "frame" && msg.payload?.frame) {
+            const f = msg.payload;
+            setLiveFrames((prev) => ({
+              ...prev,
+              [f.student_id]: {
+                studentId: String(f.student_id),
+                studentName: f.student_name,
+                examId: String(f.exam_id),
+                dataUrl: f.frame,
+                ts: Date.parse(f.timestamp) || Date.now(),
+              },
+            }));
+            return;
+          }
+          if (msg?.payload?.event_type || msg?.event) {
+            const event = mapBroadcastToEvent(msg);
+            if (event) {
+              setEvents((prev) => [event, ...prev].slice(0, 200));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      ws.onerror = () => {
+        // The close handler will trigger a reconnect.
+      };
+
+      ws.onclose = () => {
+        wsOpenRef.current = false;
+        (window as any).__proctoring_ws_open__ = false;
+        if (wsRef.current === ws) wsRef.current = null;
+        scheduleReconnect();
+      };
     };
-    // store websocket on window for debugging and allow cleanup
-    (window as any).__proctoring_ws = wsRef;
+
+    const scheduleReconnect = () => {
+      if (cancelled) return;
+      const delay = Math.min(retryDelay, 15000);
+      retryDelay = Math.min(retryDelay * 2, 15000);
+      setTimeout(connect, delay);
+    };
+
+    connect();
+
     return () => {
-      try { ws.close(); } catch {};
-      (window as any).__proctoring_ws = null;
+      cancelled = true;
+      try { wsRef.current?.close(); } catch {}
+      if (wsRef.current) wsRef.current = null;
+      wsOpenRef.current = false;
+      (window as any).__proctoring_ws = wsRef;
+      (window as any).__proctoring_ws_open__ = false;
     };
   }, [user]);
 
@@ -141,19 +209,35 @@ export function ProctoringProvider({ children }: { children: React.ReactNode }) 
   const publishFrame = React.useCallback(async (f: LiveFrame) => {
     setLiveFrames((prev) => ({ ...prev, [f.studentId]: f }));
     if (f.examId) {
+      const frameMessage = JSON.stringify({
+        event: "frame",
+        payload: {
+          exam_id: f.examId,
+          student_id: f.studentId,
+          student_name: f.studentName,
+          frame: f.dataUrl,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      // Send the frame over the websocket as a fast path so teachers receive it
+      // immediately. Buffer if the socket hasn't opened yet so the first frame
+      // isn't dropped during the CONNECTING phase.
       try {
-        const resp = await sendProctorFrame(f.examId, f.dataUrl);
-        // Also send the frame over websocket as a fast path so teachers receive it immediately.
-        try {
-          const wsAny = (window as any).__proctoring_ws;
-          const ws = wsAny && wsAny.current ? wsAny.current as WebSocket : null;
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ event: 'frame', payload: { exam_id: f.examId, student_id: f.studentId, student_name: f.studentName, frame: f.dataUrl, timestamp: new Date().toISOString() } }));
-          }
-        } catch (e) {
-          // ignore websocket send errors
+        const wsAny = (window as any).__proctoring_ws;
+        const ws = wsAny && wsAny.current ? (wsAny.current as WebSocket) : null;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(frameMessage);
+        } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+          // Cap the buffer so we don't grow unbounded if the socket never opens.
+          if (wsBufferRef.current.length < 10) wsBufferRef.current.push(frameMessage);
         }
-        return resp;
+      } catch {
+        // ignore websocket send errors
+      }
+
+      try {
+        return await sendProctorFrame(f.examId, f.dataUrl);
       } catch {
         return null;
       }

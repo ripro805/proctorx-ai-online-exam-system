@@ -1,4 +1,4 @@
-"""Seed 5 realistic university-level exams for the student exam section.
+"""Seed realistic university-level exams for the student exam section.
 
 This script is idempotent: it checks by exam title and skips exams that already
 exist.  It also resets Postgres sequences for `exams_exam`, `exams_question`,
@@ -241,6 +241,50 @@ EXAM_BLUEPRINTS = [
             ("desc", "Compare allocative efficiency under perfect competition and monopoly.",
              "Perfect competition produces where P = MC, achieving allocative efficiency. Monopoly restricts output to where MR = MC and charges P > MC, creating deadweight loss.", 4,
              "Contrast P = MC vs P > MC and discuss welfare loss."),
+        ],
+    },
+    {
+        "key": "calc_eng_phys2",
+        "title": "Calculus for Engineering Physics II - Live Midterm: Multivariable Calculus & Vector Fields",
+        "subject": "Engineering Physics",
+        "description": (
+            "Live midterm for the second half of the calculus-for-physics "
+            "sequence: multivariable functions, partial derivatives, line and "
+            "surface integrals, and the classical vector field theorems "
+            "(Green, Stokes, divergence)."
+        ),
+        "duration_minutes": 150,
+        "max_questions": 9,
+        "status": "ongoing",
+        "owner_email": "teacher@demo.com",
+        "questions": [
+            ("mcq", "If f(x, y) = x^2 y + sin(xy), the partial derivative ∂f/∂x at (1, 0) is:",
+             ["0", "1", "2", "3"], 3,
+             "∂f/∂x = 2xy + y cos(xy); at (1, 0) this evaluates to 0."),
+            ("mcq", "The gradient of a scalar field is always:",
+             ["Parallel to the surface", "Perpendicular to the level surface", "Tangent to the level surface", "Zero inside a region of constant f"], 3,
+             "Gradients are normal to level surfaces."),
+            ("mcq", "Which identity relates a surface integral of curl F to a line integral of F?",
+             ["Green's theorem", "Stokes' theorem", "Divergence theorem", "Fundamental theorem of calculus"], 3,
+             "Stokes' theorem: ∬_S (curl F)·dS = ∮_∂S F·dr."),
+            ("mcq", "The divergence theorem in 3D states ∭_V (∇·F) dV =",
+             ["∮_∂V F·dS", "∮_∂V F·dr", "∬_S (curl F)·dS", "∫_V |F| dV"], 3,
+             "Divergence theorem equates the volume integral of divergence to the flux through the closed surface."),
+            ("mcq", "A conservative vector field F in a simply connected region satisfies:",
+             ["∇·F = 0", "∇×F = 0", "F = 0", "|F| = constant"], 3,
+             "Conservative fields are irrotational: their curl is zero."),
+            ("mcq", "The Hessian matrix of a twice-differentiable scalar field f collects:",
+             ["First partial derivatives", "Second partial derivatives", "Mixed integrals of F", "Components of ∇f"], 3,
+             "H_ij = ∂²f/∂x_i ∂x_j."),
+            ("desc", "State and apply the chain rule for a function f(x(t), y(t)) along a parametric curve, and use it to derive the gradient-form directional derivative D_u f = ∇f · u.",
+             "df/dt = f_x dx/dt + f_y dy/dt = ∇f · r'(t). At t=0 with unit tangent u, df/ds = ∇f · u. The directional derivative is the projection of ∇f onto u.", 4,
+             "Show both the chain rule step and the dot-product conclusion."),
+            ("desc", "Use Stokes' theorem to compute the circulation of F = (-y, x, 0) around the unit circle in the xy-plane, and interpret the result geometrically.",
+             "curl F = (0, 0, 2). For the unit disk S with upward normal, ∬_S 2 dA = 2π. Geometrically, F is a pure rotation of constant magnitude 1, so its circulation around a loop enclosing area π equals 2π (twice the enclosed area, by Green's theorem).", 4,
+             "Compute curl, integrate over the disk, and link to rotation/area."),
+            ("desc", "Explain why the divergence theorem fails when F has a singularity inside the volume, and describe a patched-region strategy that restores the result.",
+             "At a singularity, F is not defined on the whole closed region, so the standard statement does not apply. Carve out a small sphere (or other surface) around the singularity, apply the theorem to the punctured region, and take the limit as the inner surface shrinks; the inner flux yields the singular contribution (e.g., 4π q for a point charge in Gauss's law).", 4,
+             "Puncture the region, apply divergence theorem to the remainder, take the limit, and identify the singular flux."),
         ],
     },
     {
