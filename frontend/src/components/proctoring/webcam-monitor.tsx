@@ -47,10 +47,14 @@ export function WebcamMonitor({
     try {
       setCameraError(null);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      // Request HD (720p) and let the browser negotiate. We list three ideal
+      // resolutions so cameras that can't deliver 720p fall back gracefully
+      // (e.g. older laptop cams that only do 480p) instead of failing.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 320 },
-          height: { ideal: 240 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
           facingMode: { ideal: "user" },
         },
         audio: false,
@@ -58,6 +62,14 @@ export function WebcamMonitor({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Reflect what the camera actually delivered so the UI can show a
+        // truthful "HD 720p" / "SD 480p" hint.
+        const track = stream.getVideoTracks?.()[0];
+        const settings = track?.getSettings?.();
+        if (settings?.width && settings?.height) {
+          videoRef.current.dataset.actualWidth = String(settings.width);
+          videoRef.current.dataset.actualHeight = String(settings.height);
+        }
         await videoRef.current.play().catch(() => {});
       }
       setPermission("granted");
@@ -90,19 +102,43 @@ export function WebcamMonitor({
       const v = videoRef.current;
       const c = canvasRef.current;
       if (!v || !c || v.videoWidth === 0) return;
-      c.width = 200;
-      c.height = 150;
+
+      // HD publish canvas — drives the teacher's live tile. We cap at 1280x720
+      // so we never ship a 4K frame over WS/Channels every 2.5s.
+      const PUB_MAX_W = 1280;
+      const PUB_MAX_H = 720;
+      const srcW = v.videoWidth;
+      const srcH = v.videoHeight;
+      const scale = Math.min(1, PUB_MAX_W / srcW, PUB_MAX_H / srcH);
+      const pubW = Math.max(1, Math.round(srcW * scale));
+      const pubH = Math.max(1, Math.round(srcH * scale));
+
+      c.width = pubW;
+      c.height = pubH;
       const ctx = c.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(v, 0, 0, c.width, c.height);
+      ctx.drawImage(v, 0, 0, pubW, pubH);
+
+      // Small analysis canvas for face detection — keeps the skin-tone scan
+      // cheap so it doesn't compete with the HD encode.
+      const anaW = 240;
+      const anaH = Math.round(180 * (pubH / pubW));
+      const anaCanvas = document.createElement("canvas");
+      anaCanvas.width = anaW;
+      anaCanvas.height = anaH;
+      const anaCtx = anaCanvas.getContext("2d");
+      if (!anaCtx) return;
+      anaCtx.drawImage(v, 0, 0, anaW, anaH);
+
       const now = Date.now();
       setLastSent(now);
 
-      // Publish a slightly larger frame for the teacher feed
-      const dataUrl = c.toDataURL("image/jpeg", 0.55);
+      // High-quality JPEG for the teacher feed (q=0.82 ≈ visually lossless
+      // for surveillance-style frames while still compressing well).
+      const dataUrl = c.toDataURL("image/jpeg", 0.82);
       const analysis = await publishFrame({ studentId, studentName, examId, dataUrl, ts: now });
 
-      let raw: FaceState = analyzeFrame(ctx, c.width, c.height);
+      let raw: FaceState = analyzeFrame(anaCtx, anaW, anaH);
       if (analysis) {
         if (analysis.warning === "no_face") raw = "no_face";
         else if (analysis.warning === "multiple_faces") raw = "multi_face";
